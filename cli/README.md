@@ -5,17 +5,36 @@ tied to a single domain or any particular workload. Any project can run
 one instance, expose its WSS endpoint, and consume each enrolled phone through
 the loopback HTTP proxy port assigned at pairing.
 
-## Install and configure
+## Install from a GitHub Release
+
+Each release publishes `nutty-proxy-phone-proxy-agent-<version>.tgz`, generated
+with `npm pack`. Download the exact release version on the project server; this
+does not require the package to be published to npm.
 
 ```bash
-cd cli
-npm install
-npm link
+release_version=0.1.0
+install_dir=/opt/nutty-proxy-agent
+mkdir -p "$install_dir"
+curl -fL "https://github.com/<owner>/<repo>/releases/download/v${release_version}/nutty-proxy-phone-proxy-agent-${release_version}.tgz" \
+  -o /tmp/nutty-proxy-agent.tgz
+tar -xzf /tmp/nutty-proxy-agent.tgz --strip-components=1 -C "$install_dir"
+cd "$install_dir"
+npm ci --omit=dev
+node bin/phone-proxy-agent.mjs --help
+```
 
-phone-proxy-agent init \
+Replace `<owner>/<repo>` with this repository's public GitHub path before
+publishing the release. Verify the release checksum if one is supplied. The
+release tarball intentionally contains only the CLI runtime, lockfile, and
+operator/protocol documentation.
+
+## Configure
+
+```bash
+node bin/phone-proxy-agent.mjs init \
   --public-url wss://proxy.example.com/phone-agent/v1 \
   --certificate-pin 'sha256/<SPKI-base64-pin>'
-phone-proxy-agent serve
+node bin/phone-proxy-agent.mjs serve
 ```
 
 `serve` binds to `127.0.0.1:41082` by default. Terminate TLS at your normal
@@ -101,19 +120,8 @@ VMs/containers with separate network namespaces when that boundary is needed.
 The exact on-wire contract is in [PROTOCOL.md](PROTOCOL.md). It is the right
 reference when adding another server implementation or a non-Android client.
 
-## Installing the CLI on a project server
+## Development checkout
 
-The preferred distribution is a versioned npm package, installed **locally in
-each project** and committed in that project's lockfile:
-
-```bash
-npm install @nutty-proxy/phone-proxy-agent@0.1.0
-./node_modules/.bin/phone-proxy-agent init ...
-```
-
-This prevents a background service silently changing CLI versions. `npx
-@nutty-proxy/phone-proxy-agent@0.1.0 ...` is convenient for one-off
-administration; a global installation is acceptable only for a personal admin
-machine. Until the package is published to the chosen npm/GitHub registry, use
-the checked-out `cli/` directory with `npm ci` and invoke
-`./node_modules/.bin/phone-proxy-agent` from the service unit.
+For local development only, run `npm install` inside `cli/` and invoke
+`node bin/phone-proxy-agent.mjs`. Production servers should use a pinned GitHub
+Release tarball rather than a mutable checkout or global npm install.

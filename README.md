@@ -37,13 +37,17 @@ certificate pin makes a QR payload safe from ordinary DNS or CA interception.
 See [`cli/README.md`](cli/README.md) for the server setup, reverse proxy
 configuration, pairing flow, and lifecycle commands.
 
+For production, install the versioned CLI tarball from this project's GitHub
+Release on each server. The release asset is an npm package tarball; it keeps
+the server-side CLI version explicit without requiring an npm publication. See
+the CLI installation section for the exact flow.
+
 ## Build
 
 Requires JDK 17, Android SDK platform 35, build-tools 35.0.0, and Gradle 8.9.
 
 ```bash
 printf 'sdk.dir=/absolute/path/to/android-sdk\n' > local.properties
-gradle wrapper --gradle-version 8.9
 ./gradlew :app:assembleDebug
 ```
 
@@ -52,8 +56,5 @@ The verified debug artifact is written to
 intentionally not committed: create and protect the signing key before putting
 an APK behind the blog download QR.
 
-## Design source
-
-The original Compose design system and fifteen preview frames remain under
-`design/`, `DESIGN.md`, and `ui/preview/Frames.kt`. The design shell now reads
-the agent's real state; preview frames use the normal ViewModel factory.
+Local-only design handoff material is deliberately excluded from the public
+repository and from release artifacts.

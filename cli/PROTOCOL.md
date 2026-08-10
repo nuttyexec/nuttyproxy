@@ -26,6 +26,11 @@ long-term credential. The Android app rejects an expired payload and creates a
 P-256 private key in Android Keystore, sending only its public JWK during this
 first connection.
 
+A gateway stores only a one-way hash of the unclaimed token. It must atomically
+reserve a token before issuing a challenge and consume that reservation only
+after a valid signature; concurrent connections using the same QR must not be
+able to register competing public keys.
+
 ## Authentication
 
 After TLS validation and certificate pinning:
@@ -46,7 +51,8 @@ phone-proxy-agent/v1\n<agentId>\n<challenge>
 P-256 uses `SHA256withECDSA` with the DER signature bytes, Base64URL encoded.
 The generic CLI also accepts Ed25519 where the phone supports it. Once paired,
 the gateway uses the stored public JWK and no longer accepts a replacement key
-for the same `agentId`; revoke and pair again to rotate an identity.
+for the same `agentId`; revoke and pair again to rotate an identity. A changed
+TLS SPKI pin likewise requires an updated pairing configuration or re-pairing.
 
 ## Proxy streams
 

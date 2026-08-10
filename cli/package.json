@@ -6,7 +6,7 @@
     "bin",
     "README.md",
     "PROTOCOL.md",
-    "systemd"
+    "npm-shrinkwrap.json"
   ],
   "bin": {
     "phone-proxy-agent": "bin/phone-proxy-agent.mjs"

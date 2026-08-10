@@ -24,7 +24,7 @@
 # Reusable server CLI: executable, install lockfile, and operator/protocol docs.
 !/cli/
 !/cli/package.json
-!/cli/package-lock.json
+!/cli/npm-shrinkwrap.json
 !/cli/README.md
 !/cli/PROTOCOL.md
 !/cli/bin/
