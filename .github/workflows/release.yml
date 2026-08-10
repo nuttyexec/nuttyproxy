@@ -37,6 +37,7 @@ jobs:
         working-directory: cli
         run: |
           npm ci --ignore-scripts
+          mkdir -p ../dist
           npm pack --pack-destination ../dist
 
       - name: Create GitHub Release
