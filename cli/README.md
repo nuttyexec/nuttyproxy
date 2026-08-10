@@ -6,67 +6,49 @@ No command depends on the current directory.
 
 ## Quick start
 
-The server needs Node.js 20+ and a public `wss://` endpoint that reverse-proxies
-to this machine. Run these commands on the server.
+The server needs Node.js 20+, Nginx, and either an existing HTTPS domain
+(recommended) or a fixed public IP. Run these commands on the server.
 
 ### 1. Install the CLI
 
 ```bash
-sudo env "PATH=$PATH" npm install --global \
-  https://github.com/nuttyexec/nuttyproxy/releases/latest/download/nuttyproxy-cli.tgz
+curl -fsSL https://raw.githubusercontent.com/nuttyexec/nuttyproxy/main/install.sh | sh
 nuttyproxy --help
 ```
 
 The URL is GitHub's `latest` release redirect, so this installs the current
 published CLI without npm publishing.
 
-### 2. Route your public WSS endpoint
-
-Configure your normal TLS reverse proxy to send a public path to the local
-gateway. Replace the hostname and path with yours.
-
-```nginx
-location = /nutty-proxy/v1 {
-  proxy_pass http://127.0.0.1:41082;
-  proxy_http_version 1.1;
-  proxy_set_header Upgrade $http_upgrade;
-  proxy_set_header Connection "upgrade";
-  proxy_set_header Host $host;
-  proxy_read_timeout 3600s;
-  proxy_send_timeout 3600s;
-  proxy_buffering off;
-}
-```
-
-Obtain the TLS SPKI pin for the certificate the phone will see:
+### 2. Configure the endpoint and daemon
 
 ```bash
-openssl s_client -connect proxy.example.com:443 -servername proxy.example.com </dev/null 2>/dev/null \
-  | openssl x509 -pubkey -noout \
-  | openssl pkey -pubin -outform der \
-  | openssl dgst -sha256 -binary | base64
+sudo nuttyproxy setup
 ```
 
-Prefix that value with `sha256/` when prompted below.
+`setup` detects the HTTPS domains already configured in Nginx. Press Enter to
+use the displayed domain, or type a different configured domain. At the next
+prompt, press Enter to use the standard WSS path, `/nutty-proxy`.
 
-### 3. Configure and start the one daemon
+It adds only one exact Nginx location, calculates the certificate SPKI pin,
+stores the server-wide configuration in `/var/lib/nuttyproxy`, and creates the
+single boot-persistent `nuttyproxy.service`. The local gateway remains bound to
+`127.0.0.1:41082`; it is never a public proxy port.
 
-`init` asks only for the two server-specific values. All other settings use
-safe defaults: loopback gateway `127.0.0.1:41082`, global state directory
-`/var/lib/nuttyproxy`, and the path already included in your WSS URL.
+For a fixed public IP, type that IP at the address prompt. `setup` then uses a
+separate HTTPS port (default `8443`) so it does not replace another site's TLS
+default, and requests a six-day Let's Encrypt IP certificate. This needs
+Certbot 5.3+ and briefly stops Nginx for the HTTP validation; Certbot saves the
+renewal hooks and reuses the key so the app's SPKI pin remains stable. Domain
+mode is preferable when a domain already exists. Active UFW installations are
+opened automatically for that selected port; allow the same TCP port in any
+cloud/provider firewall yourself.
 
-```bash
-sudo install -d -o "$USER" -g "$(id -gn)" -m 700 /var/lib/nuttyproxy
-nuttyproxy init
-sudo env "PATH=$PATH" nuttyproxy service install
-systemctl status nuttyproxy
-```
+The public endpoint accepts only the WSS upgrade. Before a phone becomes
+usable, it must present the one-time pairing token and prove possession of its
+Android-keystore device key with a fresh signed challenge. Nginx also rate- and
+connection-limits that public upgrade path.
 
-Enter, for example, `wss://proxy.example.com/nutty-proxy/v1` and the
-`sha256/...` pin at the prompts. `service install` creates and enables the
-single `nuttyproxy.service`, including restart after reboot.
-
-### 4. Show the Android download QR
+### 3. Show the Android download QR
 
 ```bash
 nuttyproxy installqr
@@ -75,7 +57,7 @@ nuttyproxy installqr
 Scan this QR with the phone's regular camera, install Nutty Proxy, and open it.
 The QR always points at the latest published APK.
 
-### 5. Pair a phone
+### 4. Pair a phone
 
 ```bash
 nuttyproxy pair
@@ -86,7 +68,7 @@ name in the app, approve the always-on checklist, then tap **Start proxy**.
 The CLI automatically creates the opaque agent ID and selects an unused random
 loopback port; it prints the resulting proxy URL beneath the QR.
 
-### 6. Make calls through the phone
+### 5. Make calls through the phone
 
 After the app says connected, list the assigned proxy address:
 

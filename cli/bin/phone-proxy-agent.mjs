@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import childProcess from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import process from "node:process";
@@ -31,6 +32,9 @@ const FRAME_TO_GATEWAY = 2;
 // an operator may keep a stable gateway running while installing the current
 // phone app.
 const DEFAULT_INSTALL_URL = "https://github.com/nuttyexec/nuttyproxy/releases/latest/download/app-release.apk";
+const DEFAULT_GATEWAY_PORT = 41082;
+const DEFAULT_WSS_PATH = "/nutty-proxy";
+const DEFAULT_IP_TLS_PORT = 8443;
 
 function fail(message) { console.error(`phone-proxy-agent: ${message}`); process.exitCode = 1; }
 function usage() {
@@ -38,6 +42,7 @@ function usage() {
 nuttyproxy <command>
 
   init      create a server configuration
+  setup     configure the public WSS endpoint and server-wide daemon
   serve     run the local WSS gateway and loopback proxy listeners
   pair      create and print a one-time Android pairing QR
   installqr print the Nutty Proxy APK download QR
@@ -337,8 +342,290 @@ function runGateway(configFile, config) {
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
+function run(command, commandArgs, options = {}) {
+  const result = childProcess.spawnSync(command, commandArgs, {
+    encoding: "utf8",
+    stdio: options.stdio || "pipe",
+  });
+  if (result.error) throw new Error(`${command}: ${result.error.message}`);
+  if (result.status !== 0) {
+    const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+    throw new Error(`${command} ${commandArgs.join(" ")} failed${detail ? `: ${detail}` : ""}`);
+  }
+  return result.stdout || "";
+}
+function requireRootSetup() {
+  if (process.platform !== "linux" || typeof process.getuid !== "function" || process.getuid() !== 0) {
+    throw new Error("run setup with sudo: sudo nuttyproxy setup");
+  }
+  if (!process.env.SUDO_USER || !process.env.SUDO_UID || !process.env.SUDO_GID) {
+    throw new Error("run setup through sudo from the account that will own the daemon");
+  }
+  if (!process.env.SUDO_USER.match(/^[a-z_][a-z0-9_-]*[$]?$/i) || !Number.isInteger(Number(process.env.SUDO_UID)) || !Number.isInteger(Number(process.env.SUDO_GID))) {
+    throw new Error("the sudo daemon account is invalid");
+  }
+  return { user: process.env.SUDO_USER, uid: Number(process.env.SUDO_UID), gid: Number(process.env.SUDO_GID) };
+}
+function cleanWssPath(value) {
+  const candidate = (value || DEFAULT_WSS_PATH).trim();
+  if (!candidate.startsWith("/") || candidate.includes("?") || candidate.includes("#") || candidate.includes("//") || !/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(candidate)) {
+    throw new Error("WSS path must be a clean absolute path, for example /nutty-proxy");
+  }
+  return candidate;
+}
+function isPublicAddress(value) {
+  const version = net.isIP(value);
+  if (version === 4) {
+    const octets = value.split(".").map(Number);
+    return !(
+      octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || octets[0] >= 224 ||
+      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) ||
+      (octets[0] === 169 && octets[1] === 254) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168)
+    );
+  }
+  if (version === 6) return value !== "::1" && !/^f[cd]/i.test(value) && !/^fe[89ab]/i.test(value);
+  return false;
+}
+function validHostName(value) {
+  return typeof value === "string" && value.length <= 253 && /^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,63}$/.test(value);
+}
+function publicIp() {
+  return new Promise((resolve) => {
+    const request = https.get("https://api.ipify.org", { timeout: 4_000 }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve(isPublicAddress(body.trim()) ? body.trim() : null));
+    });
+    request.once("timeout", () => request.destroy());
+    request.once("error", () => resolve(null));
+  });
+}
+function uncommented(source) {
+  let output = ""; let quote = null; let comment = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (comment) { output += char === "\n" ? "\n" : " "; if (char === "\n") comment = false; continue; }
+    if (!quote && char === "#") { output += " "; comment = true; continue; }
+    if (char === "\\" && quote) { output += `${char}${source[++index] || ""}`; continue; }
+    if (char === "\"" || char === "'") quote = quote === char ? null : (quote || char);
+    output += char;
+  }
+  return output;
+}
+function serverBlocks(source) {
+  const clean = uncommented(source); const blocks = []; const pattern = /\bserver\s*\{/g;
+  for (let match; (match = pattern.exec(clean));) {
+    const opening = clean.indexOf("{", match.index); let depth = 0; let closing = -1;
+    for (let index = opening; index < clean.length; index += 1) {
+      if (clean[index] === "{") depth += 1;
+      if (clean[index] === "}" && --depth === 0) { closing = index; break; }
+    }
+    if (closing >= 0) { blocks.push({ start: match.index, end: closing + 1, body: clean.slice(match.index, closing + 1) }); pattern.lastIndex = closing + 1; }
+  }
+  return blocks;
+}
+function nginxConfigFiles() {
+  const output = run("nginx", ["-T"]); const files = new Map();
+  const marker = /^# configuration file (.+):$/gm; const matches = [...output.matchAll(marker)];
+  for (let index = 0; index < matches.length; index += 1) {
+    const file = matches[index][1]; const start = matches[index].index + matches[index][0].length + 1;
+    const end = index + 1 < matches.length ? matches[index + 1].index : output.length;
+    if (fs.existsSync(file)) files.set(fs.realpathSync(file), fs.readFileSync(file, "utf8"));
+  }
+  return files;
+}
+function findDomainServer(host) {
+  for (const [file, source] of nginxConfigFiles()) {
+    for (const block of serverBlocks(source)) {
+      const names = [...block.body.matchAll(/\bserver_name\s+([^;]+);/g)].flatMap((match) => match[1].trim().split(/\s+/));
+      if (!names.includes(host)) continue;
+      const cert = block.body.match(/\bssl_certificate\s+([^;\s]+)\s*;/)?.[1];
+      const key = block.body.match(/\bssl_certificate_key\s+([^;\s]+)\s*;/)?.[1];
+      const listensSsl = /\blisten\s+[^;]*\bssl\b[^;]*;/.test(block.body);
+      if (cert && key && listensSsl) return { file, source, block, certificate: cert, key };
+    }
+  }
+  return null;
+}
+function domainCandidates() {
+  const names = new Set();
+  for (const [, source] of nginxConfigFiles()) {
+    for (const block of serverBlocks(source)) {
+      if (!/\blisten\s+[^;]*\bssl\b[^;]*;/.test(block.body)) continue;
+      for (const match of block.body.matchAll(/\bserver_name\s+([^;]+);/g)) {
+        for (const name of match[1].trim().split(/\s+/)) if (validHostName(name)) names.add(name.toLowerCase());
+      }
+    }
+  }
+  return [...names].sort();
+}
+function nginxLocation(pathValue) {
+  return `\n  # Nutty Proxy managed WSS endpoint. Pairing and device-key authentication\n  # happen in the local gateway; this location does not expose a proxy port.\n  location = ${pathValue} {\n    limit_req zone=nuttyproxy_handshake burst=20 nodelay;\n    limit_conn nuttyproxy_client 4;\n    proxy_pass http://127.0.0.1:${DEFAULT_GATEWAY_PORT};\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection "upgrade";\n    proxy_set_header Host $host;\n    proxy_read_timeout 3600s;\n    proxy_send_timeout 3600s;\n    proxy_buffering off;\n  }\n`;
+}
+function writeManaged(file, content, mode = 0o644) {
+  const backup = `${file}.nuttyproxy-backup-${Date.now()}`;
+  if (fs.existsSync(file)) fs.copyFileSync(file, backup);
+  try {
+    fs.writeFileSync(file, content, { mode });
+    run("nginx", ["-t"]);
+    run("systemctl", ["reload", "nginx"]);
+  } catch (error) {
+    if (fs.existsSync(backup)) fs.copyFileSync(backup, file); else fs.rmSync(file, { force: true });
+    try { run("nginx", ["-t"]); run("systemctl", ["reload", "nginx"]); } catch { /* preserve the original failure */ }
+    throw error;
+  }
+  return backup;
+}
+function ensureNginxLimits() {
+  const file = "/etc/nginx/conf.d/nuttyproxy-rate-limit.conf";
+  const content = "# Managed by Nutty Proxy. Limits apply only to its public WSS upgrade.\nlimit_req_zone $binary_remote_addr zone=nuttyproxy_handshake:10m rate=10r/m;\nlimit_conn_zone $binary_remote_addr zone=nuttyproxy_client:10m;\n";
+  if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === content) return;
+  writeManaged(file, content);
+}
+function configureDomainEndpoint(host, pathValue) {
+  const target = findDomainServer(host);
+  if (!target) throw new Error(`no TLS Nginx server for ${host} was found; choose a configured domain or use its public IP`);
+  if (!fs.existsSync(target.certificate) || !fs.existsSync(target.key)) throw new Error(`the Nginx certificate files for ${host} are not readable`);
+  const locationPattern = new RegExp(`\\blocation\\s*=\\s*${pathValue.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*\\{`);
+  if (!locationPattern.test(target.block.body)) {
+    const insertion = target.source.slice(0, target.block.end - 1) + nginxLocation(pathValue) + target.source.slice(target.block.end - 1);
+    writeManaged(target.file, insertion);
+  }
+  return { certificate: target.certificate, url: `wss://${host}${pathValue}` };
+}
+function certificatePin(certificateFile) {
+  const certificate = new crypto.X509Certificate(fs.readFileSync(certificateFile));
+  const der = certificate.publicKey.export({ type: "spki", format: "der" });
+  return `sha256/${crypto.createHash("sha256").update(der).digest("base64")}`;
+}
+function openUfwPort(port) {
+  const status = childProcess.spawnSync("ufw", ["status"], { encoding: "utf8" });
+  if (status.error?.code === "ENOENT" || status.status !== 0 || !/^Status:\s+active/im.test(status.stdout || "")) return;
+  run("ufw", ["allow", `${port}/tcp`]);
+  console.log(`Allowed TCP ${port} through UFW.`);
+}
+function parseVersion(value) {
+  const match = value.match(/(\d+)\.(\d+)\.(\d+)/);
+  return match ? match.slice(1).map(Number) : null;
+}
+function atLeastVersion(actual, expected) {
+  if (!actual) return false;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (actual[index] > expected[index]) return true;
+    if (actual[index] < expected[index]) return false;
+  }
+  return true;
+}
+async function ask(terminal, prompt, defaultValue = "") {
+  const suffix = defaultValue ? ` [${defaultValue}]` : "";
+  const answer = (await terminal.question(`${prompt}${suffix}: `)).trim();
+  return answer || defaultValue;
+}
+function installService(options = {}) {
+  const { user } = requireRootSetup();
+  const { file } = loadConfig(options); const stateDir = path.dirname(file);
+  const entrypoint = fs.realpathSync(process.argv[1]);
+  if ([process.execPath, entrypoint, stateDir].some((value) => /\s/.test(value))) throw new Error("service paths cannot contain whitespace");
+  const unit = `[Unit]\nDescription=Nutty Proxy gateway\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${path.dirname(entrypoint)}\nEnvironment=NUTTYPROXY_STATE_DIR=${stateDir}\nExecStart=${process.execPath} ${entrypoint} serve\nRestart=on-failure\nRestartSec=3s\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n`;
+  fs.writeFileSync("/etc/systemd/system/nuttyproxy.service", unit, { mode: 0o644 });
+  run("systemctl", ["daemon-reload"]);
+  run("systemctl", ["enable", "nuttyproxy.service"]);
+  run("systemctl", ["restart", "nuttyproxy.service"]);
+  console.log(`Nutty Proxy is running as ${user} with state ${stateDir}`);
+}
+
+function ipCertificateName(ip) { return `nuttyproxy-ip-${ip.replace(/[^A-Za-z0-9]/g, "-")}`; }
+async function configureIpEndpoint(ip, pathValue, terminal) {
+  const rawVersion = run("certbot", ["--version"]);
+  const version = parseVersion(rawVersion);
+  if (!atLeastVersion(version, [5, 3, 0])) {
+    throw new Error(`public-IP TLS needs Certbot 5.3 or newer (found ${rawVersion.trim() || "unknown"}). Use an existing domain now, or upgrade Certbot before choosing the IP route.`);
+  }
+  const email = await ask(terminal, "Let's Encrypt renewal email");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("a valid renewal email is required for a public-IP certificate");
+  const portText = await ask(terminal, "Public HTTPS port", String(DEFAULT_IP_TLS_PORT));
+  const port = Number(portText);
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 80) throw new Error("choose a valid HTTPS port other than 80");
+  if (!await portAvailable(net.isIP(ip) === 6 ? "::1" : "127.0.0.1", port)) throw new Error(`local port ${port} is already in use`);
+  const confirmation = (await ask(terminal, "Certbot will briefly stop Nginx to validate the IP certificate. Continue", "Y")).toLowerCase();
+  if (confirmation !== "y" && confirmation !== "yes") throw new Error("setup cancelled");
+  const name = ipCertificateName(ip);
+  run("certbot", [
+    "certonly", "--standalone", "--non-interactive", "--agree-tos", "--preferred-profile", "shortlived",
+    "--ip-address", ip, "--email", email, "--cert-name", name, "--reuse-key",
+    "--pre-hook", "systemctl stop nginx", "--post-hook", "systemctl start nginx", "--deploy-hook", "systemctl reload nginx",
+  ], { stdio: "inherit" });
+  const certificate = `/etc/letsencrypt/live/${name}/fullchain.pem`;
+  const key = `/etc/letsencrypt/live/${name}/privkey.pem`;
+  if (!fs.existsSync(certificate) || !fs.existsSync(key)) throw new Error("Certbot did not create the expected IP certificate files");
+  ensureNginxLimits();
+  const file = "/etc/nginx/conf.d/nuttyproxy-ip.conf";
+  const listen = net.isIP(ip) === 6 ? `listen [::]:${port} ssl;` : `listen ${port} ssl;`;
+  const config = `# Managed by Nutty Proxy. This separate port avoids changing another site's TLS default.\nserver {\n  ${listen}\n  server_name _;\n  ssl_certificate ${certificate};\n  ssl_certificate_key ${key};${nginxLocation(pathValue)}}\n`;
+  writeManaged(file, config);
+  openUfwPort(port);
+  return { certificate, url: `wss://${net.isIP(ip) === 6 ? `[${ip}]` : ip}:${port}${pathValue}` };
+}
+async function commandSetup(options) {
+  if (options.help) return console.log("setup\n\nRun with sudo. It configures an existing Nginx TLS domain (recommended), or a public IP with a short-lived Let's Encrypt IP certificate.");
+  const owner = requireRootSetup();
+  if (!fs.existsSync("/usr/sbin/nginx") && !fs.existsSync("/usr/bin/nginx")) throw new Error("Nginx is required for setup; install and configure Nginx first");
+  const stateFile = configPath(options); const existing = readJson(stateFile, null);
+  if (existing) {
+    const data = loadData(dataFile(stateFile));
+    if (data.agents.length) throw new Error("phones are already paired. Do not change this endpoint in place; keep it or revoke/re-pair those phones first.");
+  }
+  const candidates = domainCandidates(); const detectedIp = await publicIp();
+  let previousHost = "";
+  try { previousHost = new URL(existing?.publicUrl || "").hostname; } catch { /* no previous configuration */ }
+  const defaultAddress = candidates.includes(previousHost) ? previousHost : (candidates[0] || detectedIp || "");
+  if (!process.stdin.isTTY && !options.address) throw new Error("setup needs a terminal (or the advanced --address option)");
+  const terminal = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
+  try {
+    if (candidates.length) console.log(`Detected Nginx TLS domain${candidates.length > 1 ? "s" : ""}: ${candidates.join(", ")}`);
+    else if (detectedIp) console.log(`Detected public IP: ${detectedIp}`);
+    const address = (options.address || await ask(terminal, "Public address (configured domain recommended, or public IP)", defaultAddress)).toLowerCase();
+    if (!validHostName(address) && !isPublicAddress(address)) throw new Error("enter a configured public domain or a public IP address");
+    const pathValue = cleanWssPath(options.path || (terminal ? await ask(terminal, "WSS path", DEFAULT_WSS_PATH) : DEFAULT_WSS_PATH));
+    let endpoint;
+    if (validHostName(address)) {
+      ensureNginxLimits();
+      endpoint = configureDomainEndpoint(address, pathValue);
+    } else {
+      endpoint = await configureIpEndpoint(address, pathValue, terminal);
+    }
+    const config = {
+      version: VERSION,
+      publicUrl: endpoint.url,
+      serverName: address,
+      certificatePin: certificatePin(endpoint.certificate),
+      gatewayHost: "127.0.0.1",
+      gatewayPort: DEFAULT_GATEWAY_PORT,
+      path: pathValue,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+    };
+    validateConfig(config);
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true, mode: 0o700 });
+    fs.chownSync(path.dirname(stateFile), owner.uid, owner.gid); fs.chmodSync(path.dirname(stateFile), 0o700);
+    writeJson(stateFile, config); fs.chownSync(stateFile, owner.uid, owner.gid);
+    // A changed endpoint invalidates QR payloads that have not been scanned.
+    // Keep this explicit rather than leaving a stale enrollment that can only
+    // fail later at a different WSS path.
+    const agentStateFile = dataFile(stateFile); const data = loadData(agentStateFile);
+    if (data.enrollments.length) {
+      saveData(agentStateFile, { ...data, enrollments: [] });
+      fs.chownSync(agentStateFile, owner.uid, owner.gid);
+    }
+    installService(options);
+    console.log(`\nReady. Public endpoint: ${config.publicUrl}\nNext: nuttyproxy installqr, then nuttyproxy pair`);
+  } finally { terminal?.close(); }
+}
+
 async function commandInit(options) {
-  if (options.help) return console.log("init [--public-url wss://proxy.example.com/phone-agent/v1 --certificate-pin sha256/...]");
+  if (options.help) return console.log("init [--public-url wss://proxy.example.com/nutty-proxy --certificate-pin sha256/...]");
   let publicUrlValue = options["public-url"];
   let certificatePin = options["certificate-pin"];
   if (!publicUrlValue || !certificatePin) {
@@ -351,7 +638,7 @@ async function commandInit(options) {
   }
   if (!validCertificatePin(certificatePin)) throw new Error("certificate pin must be sha256/<32-byte-SPKI-base64>");
   const publicUrl = new URL(publicUrlValue); if (publicUrl.protocol !== "wss:" || !publicUrl.hostname || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) throw new Error("public URL must be a clean wss:// URL");
-  const file = configPath(options); const config = { version: VERSION, publicUrl: publicUrl.toString(), serverName: options["server-name"] || publicUrl.hostname, certificatePin, gatewayHost: options["gateway-host"] || "127.0.0.1", gatewayPort: Number(options["gateway-port"] || 41082), path: options.path || publicUrl.pathname, createdAt: new Date().toISOString() };
+  const file = configPath(options); const config = { version: VERSION, publicUrl: publicUrl.toString(), serverName: options["server-name"] || publicUrl.hostname, certificatePin, gatewayHost: options["gateway-host"] || "127.0.0.1", gatewayPort: Number(options["gateway-port"] || DEFAULT_GATEWAY_PORT), path: options.path || publicUrl.pathname, createdAt: new Date().toISOString() };
   validateConfig(config);
   writeJson(file, config); console.log(`Wrote ${file}`);
 }
@@ -417,24 +704,7 @@ function commandProxy(options) {
 function commandService(options) {
   if (options.help || !options._[1]) return console.log("service install");
   if (options._[1] !== "install") throw new Error("unknown service command");
-  if (process.platform !== "linux" || typeof process.getuid !== "function" || process.getuid() !== 0) {
-    throw new Error("run: sudo nuttyproxy service install");
-  }
-  const user = process.env.SUDO_USER;
-  if (!user?.match(/^[a-z_][a-z0-9_-]*[$]?$/i) || !process.env.SUDO_UID || !process.env.SUDO_GID) {
-    throw new Error("service install must be run through sudo by the daemon user");
-  }
-  const { file } = loadConfig(options);
-  const stateDir = path.dirname(file);
-  const entrypoint = fs.realpathSync(process.argv[1]);
-  if ([process.execPath, entrypoint, stateDir].some((value) => /\s/.test(value))) throw new Error("service paths cannot contain whitespace");
-  const unit = `[Unit]\nDescription=Nutty Proxy gateway\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${path.dirname(entrypoint)}\nEnvironment=NUTTYPROXY_STATE_DIR=${stateDir}\nExecStart=${process.execPath} ${entrypoint} serve\nRestart=on-failure\nRestartSec=3s\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n`;
-  fs.writeFileSync("/etc/systemd/system/nuttyproxy.service", unit, { mode: 0o644 });
-  for (const args of [["daemon-reload"], ["enable", "--now", "nuttyproxy.service"]]) {
-    const result = childProcess.spawnSync("systemctl", args, { stdio: "inherit" });
-    if (result.status !== 0) throw new Error(`systemctl ${args.join(" ")} failed`);
-  }
-  console.log(`Nutty Proxy is running as ${user} with state ${stateDir}`);
+  installService(options);
 }
 function commandAgents(options) {
   if (options.help) return console.log("agents list | agents disable --agent-id p1 | agents enable --agent-id p1 | agents revoke --agent-id p1");
@@ -447,8 +717,9 @@ function commandAgents(options) {
 
 try {
   const options = args(process.argv.slice(2)); const command = options._[0];
-  if (!command || options.help && !["init", "serve", "pair", "installqr", "service", "proxy", "agents"].includes(command)) usage();
+  if (!command || options.help && !["init", "setup", "serve", "pair", "installqr", "service", "proxy", "agents"].includes(command)) usage();
   else if (command === "init") await commandInit(options);
+  else if (command === "setup") await commandSetup(options);
   else if (command === "serve") { if (options.help) console.log("serve [--config FILE]"); else { const { file, config } = loadConfig(options); runGateway(file, config); } }
   else if (command === "pair") await commandPair(options);
   else if (command === "installqr") commandInstallQr(options);

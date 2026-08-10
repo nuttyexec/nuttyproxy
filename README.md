@@ -5,13 +5,55 @@ uses a certificate-pinned WSS tunnel to a project's own Phone Proxy Agent
 gateway. The phone makes the outbound connection; no port is opened on the
 phone and the server never receives a phone private key.
 
-## Start here
+## Quick start
 
-The server setup is deliberately copy-and-paste driven: install the global CLI,
-run `nuttyproxy init` once, install its one system service, print the APK QR
-with `nuttyproxy installqr`, then pair each phone with `nuttyproxy pair`.
-`pair` automatically allocates the server identity and loopback port; the phone
-user chooses its name in the app. See the exact commands in
+Run this on the server. It needs Node.js 20+ and Nginx with an existing HTTPS
+domain (recommended), or a fixed public IP.
+
+### 1. Install the global CLI
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nuttyexec/nuttyproxy/main/install.sh | sh
+```
+
+This installs the latest GitHub Release directly; no npm publication or clone
+is required. Confirm it is available from any directory:
+
+```bash
+nuttyproxy --help
+```
+
+### 2. Create the phone endpoint
+
+```bash
+sudo nuttyproxy setup
+```
+
+Choose a detected HTTPS domain, then press Enter at the path prompt to use
+`/nutty-proxy`. The command adds the exact Nginx WSS route, records the TLS
+pin, and installs one boot-persistent server-wide daemon.
+
+### 3. Install and pair the phone
+
+```bash
+nuttyproxy installqr
+nuttyproxy pair
+```
+
+Scan the first QR with the phone camera to install the APK. In the app, scan
+the second QR, name the phone, complete the always-on checklist, and tap
+**Start proxy**.
+
+### 4. Use the phone's proxy
+
+```bash
+export NUTTY_PROXY_URL="$(nuttyproxy proxy P1)"
+curl --proxy "$NUTTY_PROXY_URL" https://api.ipify.org
+```
+
+`api.ipify.org` is only an example egress-IP check. Any proxy-aware program can
+use the same URL, for example with `HTTP_PROXY` and `HTTPS_PROXY` environment
+variables. The detailed server options and request examples are in
 [`cli/README.md`](cli/README.md).
 
 ## What is implemented
@@ -35,7 +77,7 @@ URLs/paths.
 ## Generic server CLI
 
 The companion [`cli/`](cli/) package is the reusable server-side gateway for
-the server. It supplies `init`, `service`, `pair`, `installqr`, and `agents`.
+the server. It supplies `setup`, `pair`, `installqr`, and `agents`.
 One daemon owns the global `/var/lib/nuttyproxy` state, receives outbound WSS
 tunnels from paired phones, and exposes one assigned `127.0.0.1:<port>` HTTP
 proxy per phone.
@@ -44,8 +86,10 @@ Generate a short-lived pairing payload with the CLI, render it as a QR code,
 then scan it in the app. A valid payload contains `gatewayUrl` (`wss://` only),
 `certificatePin`, `agentId`, server name, and a one-time enrollment token. The
 certificate pin makes a QR payload safe from ordinary DNS or CA interception.
-See [`cli/README.md`](cli/README.md) for the server setup, reverse proxy
-configuration, pairing flow, and lifecycle commands.
+`setup` automatically adds the exact `/nutty-proxy` Nginx WSS location and
+calculates that pin from the selected TLS certificate. See
+[`cli/README.md`](cli/README.md) for the server setup, pairing flow, and
+lifecycle commands.
 
 For production, install the versioned CLI tarball from this project's GitHub
 Release on each server. The release asset is an npm package tarball; it keeps
