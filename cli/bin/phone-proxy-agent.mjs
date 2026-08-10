@@ -43,7 +43,6 @@ nuttyproxy <command>
   installqr print the Nutty Proxy APK download QR
   service   install the one server-wide systemd daemon
   proxy     print a phone's local proxy URL
-  run       run any command through a phone's proxy
   agents    list, disable, enable, or revoke enrolled phones
 
 Run 'nuttyproxy <command> --help' for command options.`);
@@ -52,7 +51,6 @@ function args(argv) {
   const values = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
-    if (token === "--") { values.command = argv.slice(i + 1); break; }
     if (!token.startsWith("--")) { values._.push(token); continue; }
     const [key, inline] = token.slice(2).split("=", 2);
     if (inline !== undefined) values[key] = inline;
@@ -416,18 +414,6 @@ function commandProxy(options) {
   const agent = resolveAgent(data, options._[1]);
   console.log(`http://${agent.listenHost}:${agent.listenPort}`);
 }
-function commandRun(options) {
-  if (options.help) return console.log("run [device-name] -- command [arguments...]");
-  if (!Array.isArray(options.command) || options.command.length === 0) throw new Error("usage: nuttyproxy run [device-name] -- command [arguments...]");
-  const { file } = loadConfig(options); const data = loadData(dataFile(file));
-  const agent = resolveAgent(data, options._[1]); const proxy = `http://${agent.listenHost}:${agent.listenPort}`;
-  const result = childProcess.spawnSync(options.command[0], options.command.slice(1), {
-    stdio: "inherit",
-    env: { ...process.env, HTTP_PROXY: proxy, HTTPS_PROXY: proxy, ALL_PROXY: proxy, http_proxy: proxy, https_proxy: proxy, all_proxy: proxy },
-  });
-  if (result.error) throw result.error;
-  if (typeof result.status === "number" && result.status !== 0) process.exitCode = result.status;
-}
 function commandService(options) {
   if (options.help || !options._[1]) return console.log("service install");
   if (options._[1] !== "install") throw new Error("unknown service command");
@@ -461,14 +447,13 @@ function commandAgents(options) {
 
 try {
   const options = args(process.argv.slice(2)); const command = options._[0];
-  if (!command || options.help && !["init", "serve", "pair", "installqr", "service", "proxy", "run", "agents"].includes(command)) usage();
+  if (!command || options.help && !["init", "serve", "pair", "installqr", "service", "proxy", "agents"].includes(command)) usage();
   else if (command === "init") await commandInit(options);
   else if (command === "serve") { if (options.help) console.log("serve [--config FILE]"); else { const { file, config } = loadConfig(options); runGateway(file, config); } }
   else if (command === "pair") await commandPair(options);
   else if (command === "installqr") commandInstallQr(options);
   else if (command === "service") commandService(options);
   else if (command === "proxy") commandProxy(options);
-  else if (command === "run") commandRun(options);
   else if (command === "agents") commandAgents(options);
   else usage();
 } catch (error) { fail(error instanceof Error ? error.message : String(error)); }

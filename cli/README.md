@@ -94,36 +94,32 @@ After the app says connected, list the assigned proxy address:
 nuttyproxy agents list
 ```
 
-For a terminal command, let Nutty Proxy select the phone and set the standard
-`HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` variables. `api.ipify.org` below
-is only an example endpoint for checking the phone's egress IP:
+Obtain the selected phone's local proxy URL once. `api.ipify.org` below is only
+an example endpoint for checking the phone's egress IP:
 
 ```bash
-nuttyproxy run P1 -- curl https://api.ipify.org
+export NUTTY_PROXY_URL="$(nuttyproxy proxy P1)"
+curl --proxy "$NUTTY_PROXY_URL" https://api.ipify.org
 ```
 
 HTTP methods, headers, and bodies remain normal client options. This example
 sends a JSON POST through the phone; `httpbin.org/anything` is only a test URL:
 
 ```bash
-nuttyproxy run P1 -- curl -X POST https://httpbin.org/anything \
+curl --proxy "$NUTTY_PROXY_URL" -X POST https://httpbin.org/anything \
   --header 'Content-Type: application/json' \
   --data '{"message":"hello"}'
 ```
 
-For a bot, worker, SDK, or any client that accepts a proxy URL, obtain it
-without copying a port from a table:
+For a bot, worker, SDK, or any client that accepts proxy environment variables:
 
 ```bash
-export NUTTY_PROXY_URL="$(nuttyproxy proxy P1)"
-curl --proxy "$NUTTY_PROXY_URL" https://api.ipify.org  # example only
+HTTP_PROXY="$NUTTY_PROXY_URL" HTTPS_PROXY="$NUTTY_PROXY_URL" python worker.py
 ```
 
-The CLI is intentionally not in the data path for each request. It manages
-phones and launches commands with proxy environment variables; the client then
-connects directly to the local HTTP proxy. This keeps it compatible with curl,
-SDKs, bots, and other standard proxy-aware tools without adding a per-request
-CLI hop. Only local processes can reach that port. Do not expose it through a
+Nutty Proxy never executes client commands. It manages phones and exposes the
+local proxy URL; curl, SDKs, bots, and other proxy-aware tools connect to it
+directly. Only local processes can reach that port. Do not expose it through a
 firewall, reverse proxy, Docker port mapping, or public interface.
 
 ## Everyday commands
@@ -133,7 +129,6 @@ nuttyproxy installqr
 nuttyproxy pair
 nuttyproxy agents list
 nuttyproxy proxy P1
-nuttyproxy run P1 -- curl https://example.com
 ```
 
 Use the `agentId` shown by `agents list` only for access administration:
