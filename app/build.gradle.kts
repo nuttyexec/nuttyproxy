@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseKeystoreFile = providers.environmentVariable("ANDROID_KEYSTORE_FILE").orNull
+val releaseSigningPassword = providers.environmentVariable("ANDROID_SIGNING_PASSWORD").orNull
+
 android {
     namespace = "dev.nutty.proxy"
     compileSdk = 35
@@ -17,10 +20,25 @@ android {
         versionName = "1.4.2"
     }
 
+    signingConfigs {
+        create("release") {
+            // The keystore is decoded from a GitHub Actions secret into the
+            // runner's temporary directory. Neither it nor its password is
+            // part of this repository.
+            if (releaseKeystoreFile != null && releaseSigningPassword != null) {
+                storeFile = file(releaseKeystoreFile)
+                storePassword = releaseSigningPassword
+                keyAlias = "nuttyproxy"
+                keyPassword = releaseSigningPassword
+                storeType = "pkcs12"
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

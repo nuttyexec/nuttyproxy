@@ -13,6 +13,11 @@
 !/gradle/wrapper/gradle-wrapper.jar
 !/gradle/wrapper/gradle-wrapper.properties
 
+# The only CI definition is the tag-driven release workflow.
+!/.github/
+!/.github/workflows/
+!/.github/workflows/release.yml
+
 # Android runtime and release-build definition only.
 !/app/
 !/app/build.gradle.kts

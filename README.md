@@ -56,5 +56,21 @@ The verified debug artifact is written to
 intentionally not committed: create and protect the signing key before putting
 an APK behind the blog download QR.
 
+## Release
+
+Pushing a `v*` tag triggers the GitHub Actions release workflow. It builds a
+signed APK and a pinned CLI `.tgz`, then creates a GitHub Release with both
+assets. Before the first tag, add these **Repository secrets** in GitHub
+Actions: `ANDROID_KEYSTORE_BASE64` and `ANDROID_SIGNING_PASSWORD`. The signing
+alias is the non-secret fixed value `nuttyproxy`.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow uses the repository-scoped `GITHUB_TOKEN` with `contents: write`;
+no personal access token or release-upload deploy key is needed.
+
 Local-only design handoff material is deliberately excluded from the public
 repository and from release artifacts.
