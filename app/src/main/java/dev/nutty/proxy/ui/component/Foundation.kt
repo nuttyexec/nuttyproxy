@@ -104,6 +104,7 @@ fun DetailRow(
     valueColor: Color = NuttyColor.TextPrimary,
     chevron: Boolean = false,
     onClick: (() -> Unit)? = null,
+    leading: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -113,7 +114,17 @@ fun DetailRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, style = NuttyType.Label, color = labelColor)
+        if (leading == null) {
+            Text(label, style = NuttyType.Label, color = labelColor)
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                leading()
+                Text(label, style = NuttyType.Label, color = labelColor)
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(value, style = NuttyType.Value, color = valueColor)
             if (valueSuffix != null) {

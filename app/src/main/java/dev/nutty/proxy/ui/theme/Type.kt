@@ -146,6 +146,10 @@ object NuttyType {
     val SectionLabel = mono(10, FontWeight.Medium, letterSpacing = 0.12f)
     /** Status badge on a server row — ALLOWED / PAUSED / REVOKED. No tracking. */
     val Badge = mono(10, FontWeight.Medium)
+    /** "NUTTY PROXY" beside the mark. Wide tracking so it reads as a lockup. */
+    val Wordmark = mono(11, FontWeight.Medium, letterSpacing = 0.16f)
+    /** The splash lockup — same idea, wider still. */
+    val WordmarkLarge = mono(13, FontWeight.Medium, letterSpacing = 0.20f)
     /** Smallest eyebrow — the STREAMS/TODAY/ERRORS row on a server card. */
     val MicroLabel = mono(9, FontWeight.Medium, letterSpacing = 0.10f)
     /** HTTP method badge. */

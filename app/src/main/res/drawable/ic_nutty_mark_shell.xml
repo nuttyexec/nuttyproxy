@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Acorn — shell only. Pairs with ic_nutty_mark_cap.xml; same 60x90 viewport. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp"
+    android:height="90dp"
+    android:viewportWidth="60"
+    android:viewportHeight="90"
+    android:tint="#FFFFFF">
+    <group android:translateX="-20" android:translateY="-2">
+        <path android:pathData="M23 40c0 28 13 44 27 52 14-8 27-24 27-52z" android:fillColor="#FFFFFF"/>
+    </group>
+</vector>

@@ -13,13 +13,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import android.app.Activity
+import kotlinx.coroutines.delay
 import dev.nutty.proxy.ProxyViewModel
 import dev.nutty.proxy.ReleaseUpdate
 import androidx.compose.ui.Modifier
@@ -39,6 +42,7 @@ import dev.nutty.proxy.ui.screen.ReadyScreen
 import dev.nutty.proxy.ui.screen.ServerDetailScreen
 import dev.nutty.proxy.ui.screen.ServersScreen
 import dev.nutty.proxy.ui.screen.SettingsScreen
+import dev.nutty.proxy.ui.screen.SplashScreen
 import dev.nutty.proxy.ui.screen.TestScreen
 import dev.nutty.proxy.ui.theme.NuttyColor
 
@@ -83,7 +87,12 @@ fun NuttyApp(
     val requests = model.requests(snapshot)
     val readiness = remember(readinessRevision) { model.readiness() }
     val network = remember(readinessRevision) { model.networkSummary(context) }
-    var screen by remember { mutableStateOf(if (snapshot.profiles.isEmpty()) Screen.Pair else initialScreen) }
+    // Android's system splash hands off to this branded frame on a cold launch.
+    // Keep it short: it confirms the launch without turning every app open into
+    // an interstitial, and rememberSaveable prevents a rotation from replaying it.
+    var splashVisible by rememberSaveable { mutableStateOf(true) }
+    val isUnpaired by rememberUpdatedState(snapshot.profiles.isEmpty())
+    var screen by remember { mutableStateOf(if (splashVisible) Screen.Splash else if (snapshot.profiles.isEmpty()) Screen.Pair else initialScreen) }
     var sheet by remember { mutableStateOf<SheetKey?>(null) }
     var pendingPairing by remember { mutableStateOf<String?>(null) }
     var selectedServer by remember { mutableStateOf<ServerInfo?>(null) }
@@ -91,6 +100,14 @@ fun NuttyApp(
     val openSheet: (SheetKey) -> Unit = { sheet = it }
     val go: (Screen) -> Unit = { screen = it; sheet = null }
     val homeState = model.homeState(snapshot)
+
+    androidx.compose.runtime.LaunchedEffect(splashVisible) {
+        if (splashVisible) {
+            delay(520)
+            screen = if (isUnpaired) Screen.Pair else initialScreen
+            splashVisible = false
+        }
+    }
 
     Column(
         modifier = modifier
@@ -214,6 +231,8 @@ fun NuttyApp(
                     modifier = Modifier.fillMaxSize(),
                     onDone = { go(Screen.Home) },
                 )
+
+                Screen.Splash -> SplashScreen(Modifier.fillMaxSize())
 
                 Screen.NotificationShade -> NotificationShadeScreen(Modifier.fillMaxSize())
             }

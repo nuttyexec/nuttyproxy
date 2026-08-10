@@ -11,4 +11,23 @@
     <color name="nutty_amber">#FFE8B23A</color>
     <color name="nutty_red">#FFE5544B</color>
     <color name="nutty_grey">#FF6A717A</color>
+
+    <!--
+      App icon palette (design set 5b, "Shipping set — green cap").
+
+      Namespaced apart from the app palette. The icon tile (#14171B) is not the
+      app background (#0B0C0E, which drives windowBackground and statusBarColor),
+      and the design originally exported these unprefixed — its `nutty_bg` would
+      have silently overwritten this file's. That is now fixed upstream too:
+      exports/android/colors_nutty.xml ships nutty_icon_* names, so this file and
+      the export agree.
+
+      The export's nutty_warn / nutty_error are byte-identical to nutty_amber /
+      nutty_red above and are not duplicated.
+    -->
+    <color name="nutty_icon_bg">#FF14171B</color>
+    <color name="nutty_icon_bg_high">#FF232830</color>
+    <color name="nutty_icon_bg_low">#FF0E1013</color>
+    <color name="nutty_icon_shell">#FFEDEFF2</color>
+    <color name="nutty_icon_cap">#FF3ECF8E</color>
 </resources>

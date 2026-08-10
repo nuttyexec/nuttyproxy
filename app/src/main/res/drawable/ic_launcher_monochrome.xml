@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon layer (Android 13+): the glyph alone, system-tinted. -->
+<!--
+  Themed-icon layer (Material You, Android 13+): the acorn flattened to a single
+  fill. The cap/shell split carries no meaning without colour, so keeping it
+  would just read as a seam.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
-    android:viewportHeight="108"
-    android:tint="#FFFFFF">
-
-    <path
-        android:pathData="M36,34h8.4v40h-8.4z M63.6,34h8.4v40h-8.4z M36,34h8.4l27.6,40h-8.4z"
-        android:fillColor="#FFFFFF" />
+    android:viewportHeight="108">
+    <group android:scaleX="0.733" android:scaleY="0.733" android:translateX="17.333" android:translateY="19.533">
+        <path android:pathData="M46 6a4 4 0 0 1 4-4 4 4 0 0 1 4 4v6a4 4 0 0 1-4 4 4 4 0 0 1-4-4z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M20 38a30 30 0 0 1 60 0z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M23 40c0 28 13 44 27 52 14-8 27-24 27-52z" android:fillColor="#FFFFFF"/>
+    </group>
 </vector>

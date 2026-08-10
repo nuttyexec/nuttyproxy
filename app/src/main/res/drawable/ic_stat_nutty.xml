@@ -1,17 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Notification small icon. Must be a flat white-on-transparent silhouette —
-  the system tints it, so colour lives in the large-icon tile instead. This is
-  what keeps the shade legible in every one of the four ongoing states.
+  Ongoing-notification small icon, 24dp.
+
+  Flat white silhouette on transparency: the system tints it, and colour for the
+  agent's state is carried by NotificationCompat.setColor() instead.
+
+  Deviation from exports/android/ic_stat_nutty.xml: the export carries
+  android:tint="?attr/colorControlNormal". That attribute is resolved against
+  whichever theme inflates the drawable, and a notification's small icon is
+  inflated by SystemUI, not by this app — so the tint would come from a theme we
+  do not control. The paths are already pure white, which is exactly what the
+  platform wants to tint, so the attribute is dropped rather than gambled on.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
-    android:viewportHeight="24"
-    android:tint="#FFFFFF">
-
-    <path
-        android:pathData="M5,4.5h3.4v15h-3.4z M15.6,4.5h3.4v15h-3.4z M5,4.5h3.4l10.6,15h-3.4z"
-        android:fillColor="#FFFFFF" />
+    android:viewportHeight="24">
+    <group android:scaleX="0.222" android:scaleY="0.222" android:translateX="0.889" android:translateY="1.556">
+        <path android:pathData="M46 6a4 4 0 0 1 4-4 4 4 0 0 1 4 4v6a4 4 0 0 1-4 4 4 4 0 0 1-4-4z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M20 38a30 30 0 0 1 60 0z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M23 40c0 28 13 44 27 52 14-8 27-24 27-52z" android:fillColor="#FFFFFF"/>
+    </group>
 </vector>

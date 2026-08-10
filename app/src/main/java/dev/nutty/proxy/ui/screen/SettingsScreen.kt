@@ -24,6 +24,7 @@ import dev.nutty.proxy.ui.component.CardDivider
 import dev.nutty.proxy.ui.component.DangerButton
 import dev.nutty.proxy.ui.component.DetailRow
 import dev.nutty.proxy.ui.component.NuttyCard
+import dev.nutty.proxy.ui.component.NuttyMark
 import dev.nutty.proxy.ui.component.ReadinessRow
 import dev.nutty.proxy.ui.component.SectionLabel
 import dev.nutty.proxy.ui.model.ReadinessItem
@@ -149,6 +150,11 @@ fun SettingsScreen(
                     valueColor = if (update.available) NuttyColor.Green else NuttyColor.TextMuted,
                     chevron = !update.checking,
                     onClick = if (update.checking) null else if (update.available) onDownloadUpdate else onCheckForUpdate,
+                    // The design marks the row that is about the app itself rather
+                    // than about the agent. That row is "Version" in the design and
+                    // "App update" here — the shell is muted so the mark sits at row
+                    // weight instead of pulling rank over the readiness card above.
+                    leading = { NuttyMark(height = 16.dp, shellColor = NuttyColor.TextMuted) },
                 )
             }
         }

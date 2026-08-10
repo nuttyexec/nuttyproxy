@@ -3,10 +3,10 @@ package dev.nutty.proxy.ui.model
 import androidx.compose.ui.graphics.Color
 import dev.nutty.proxy.ui.theme.NuttyColor
 
-/** The eleven frames in the design. */
+/** The sixteen frames in the design. */
 enum class Screen {
     Home, Servers, ServerDetail, Activity, Settings,
-    Pair, Manual, Name, Ready, Test,
+    Splash, Pair, Manual, Name, Ready, Test,
     NotificationShade;
 
     /** Only these five carry the bottom tab bar. */
@@ -131,7 +131,10 @@ enum class ReadinessState { Done, Warning, Pending }
 
 /** The four ongoing-notification states. */
 data class NotificationPreview(
-    val tile: Color,
+    /** Agent state, carried by the acorn's cap — the row's only colour. */
+    val cap: Color,
+    /** Neutral half of the mark; dims with the row rather than encoding anything. */
+    val shell: Color,
     val source: String,
     val title: String,
     val body: String,

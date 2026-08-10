@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.nutty.proxy.ui.component.NuttyMark
 import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.NotificationPreview
 import dev.nutty.proxy.ui.theme.NuttyColor
@@ -87,15 +87,19 @@ private fun NotificationCard(notification: NotificationPreview, modifier: Modifi
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // The only coloured element — state as a 17dp chip, not as text colour.
+            // The only coloured element in the row — and it is the mark itself,
+            // not a tile behind it. Dropping the chip means state is carried by
+            // the acorn's cap, which keeps the row legible under any OEM shade
+            // theme: there is no filled block to fight the system's background.
             Box(
-                modifier = Modifier
-                    .size(17.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(notification.tile, RoundedCornerShape(5.dp)),
+                modifier = Modifier.size(17.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("N", style = NuttyType.Marker, color = NuttyColor.Bg)
+                NuttyMark(
+                    height = 15.dp,
+                    capColor = notification.cap,
+                    shellColor = notification.shell,
+                )
             }
             Text(notification.source, style = NuttyType.NotifSource, color = NuttyColor.TextMuted)
         }

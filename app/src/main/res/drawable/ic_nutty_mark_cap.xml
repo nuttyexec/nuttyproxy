@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Acorn — cap only (stem + dome). Pairs with ic_nutty_mark_shell.xml.
+
+  The mark is split across two tintable drawables rather than baked as one
+  two-tone vector because the design recolours the halves independently: the cap
+  carries agent state in the notification shade (green / amber / grey) while the
+  shell stays a neutral. Both share the 60x90 viewport, so they register exactly
+  when layered.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp"
+    android:height="90dp"
+    android:viewportWidth="60"
+    android:viewportHeight="90"
+    android:tint="#FFFFFF">
+    <group android:translateX="-20" android:translateY="-2">
+        <path android:pathData="M46 6a4 4 0 0 1 4-4 4 4 0 0 1 4 4v6a4 4 0 0 1-4 4 4 4 0 0 1-4-4z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M20 38a30 30 0 0 1 60 0z" android:fillColor="#FFFFFF"/>
+    </group>
+</vector>

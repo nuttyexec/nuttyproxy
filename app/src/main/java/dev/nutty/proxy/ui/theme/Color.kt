@@ -122,6 +122,14 @@ object NuttyColor {
     val BarSecondary = Color(0xFF5A616A)
     val BarTertiary = Color(0xFF3A4048)
 
+    // ── Brand / splash ─────────────────────────────────────────────────────────
+    // The icon tile's own ramp, reused when the mark is shown at display size.
+    val IconTileHigh = Color(0xFF232830)
+    val IconTile = Color(0xFF14171B)
+    val IconTileLow = Color(0xFF0E1013)
+    /** Lit corner of the splash ground — one step above the tile so it reads behind it. */
+    val SplashHigh = Color(0xFF1A1E24)
+
     // ── Overlay ────────────────────────────────────────────────────────────────
     val Scrim = Color(0xB8040506)
 

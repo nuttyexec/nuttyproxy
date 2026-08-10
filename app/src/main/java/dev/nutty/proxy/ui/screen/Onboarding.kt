@@ -40,6 +40,7 @@ import dev.nutty.proxy.ui.component.AccentPillButton
 import dev.nutty.proxy.ui.component.CardDivider
 import dev.nutty.proxy.ui.component.GhostPillButton
 import dev.nutty.proxy.ui.component.InfoButton
+import dev.nutty.proxy.ui.component.NuttyWordmark
 import dev.nutty.proxy.ui.component.NuttyChip
 import dev.nutty.proxy.ui.component.OutlineButton
 import dev.nutty.proxy.ui.component.PrimaryButton
@@ -67,6 +68,7 @@ import dev.nutty.proxy.agent.PairingParser
 private fun OnboardScaffold(
     step: Int,
     modifier: Modifier = Modifier,
+    brand: Boolean = false,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Column(
@@ -75,7 +77,14 @@ private fun OnboardScaffold(
             .padding(horizontal = Dim.OnboardPadding)
             .padding(top = 8.dp, bottom = 24.dp),
     ) {
-        StepDots(step, modifier = Modifier.padding(top = 10.dp, bottom = 30.dp))
+        // The lockup appears once, on the first screen a new user ever sees.
+        // Repeating it on steps 2–4 would just be branding shouting over a task.
+        if (brand) {
+            NuttyWordmark(modifier = Modifier.padding(top = 14.dp, bottom = 22.dp), markHeight = 22.dp)
+            StepDots(step, modifier = Modifier.padding(bottom = 26.dp))
+        } else {
+            StepDots(step, modifier = Modifier.padding(top = 10.dp, bottom = 30.dp))
+        }
         content()
     }
 }
@@ -135,7 +144,7 @@ fun PairScreen(
 ) {
     var error by remember { mutableStateOf<String?>(null) }
     var handled by remember { mutableStateOf(false) }
-    OnboardScaffold(step = 1, modifier = modifier) {
+    OnboardScaffold(step = 1, modifier = modifier, brand = true) {
         OnboardTitle("Scan the\npairing QR") { onOpenSheet(SheetKey.Pairing) }
         Text(
             text = "The server shows it when you run pairing.",

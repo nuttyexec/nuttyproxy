@@ -177,25 +177,30 @@ object DemoData {
 
     val notifications = listOf(
         NotificationPreview(
-            tile = NuttyColor.Green, source = "Nutty Proxy · now",
+            cap = NuttyColor.Green, shell = NuttyColor.TextSecondary,
+            source = "Nutty Proxy · now",
             title = "Connected · 2 connections", body = "sample-prod · 1.24 GB today",
             primaryAction = "Pause", primaryColor = NuttyColor.TextTertiary,
             secondaryAction = "Details",
         ),
         NotificationPreview(
-            tile = NuttyColor.Amber, source = "Nutty Proxy · 4m",
+            cap = NuttyColor.Amber, shell = NuttyColor.TextSecondary,
+            source = "Nutty Proxy · 4m",
             title = "Serving, but at risk", body = "Battery optimization was re-enabled",
             primaryAction = "Fix", primaryColor = NuttyColor.Amber,
             secondaryAction = "Pause",
         ),
         NotificationPreview(
-            tile = NuttyColor.Amber, source = "Nutty Proxy · now",
+            cap = NuttyColor.Amber, shell = NuttyColor.TextSecondary,
+            source = "Nutty Proxy · now",
             title = "Reconnecting · retry in 4s", body = "Mobile network changed",
             primaryAction = "Cancel", primaryColor = NuttyColor.TextTertiary,
             secondaryAction = "Details",
         ),
         NotificationPreview(
-            tile = NuttyColor.Grey, source = "Nutty Proxy · 12m",
+            // Paused dims both halves: nothing is happening, so nothing signals.
+            cap = NuttyColor.TextDim, shell = NuttyColor.TextMuted,
+            source = "Nutty Proxy · 12m",
             title = "Paused by you", body = "Servers cannot reach this phone",
             primaryAction = "Resume", primaryColor = NuttyColor.Green,
             secondaryAction = "Details",
