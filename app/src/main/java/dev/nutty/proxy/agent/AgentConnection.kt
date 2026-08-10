@@ -1,7 +1,7 @@
 package dev.nutty.proxy.agent
 
+import android.net.Uri
 import okhttp3.CertificatePinner
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -60,7 +60,11 @@ class AgentConnection(
             heartbeat?.cancel(false)
             socket?.cancel()
             listener.onStatus(profile, ConnectionPhase.Connecting, "Opening secure tunnel")
-            val host = profile.gatewayUrl.toHttpUrl().host
+            // OkHttp's WebSocket request builder intentionally accepts wss://,
+            // but HttpUrl.toHttpUrl() is HTTP(S)-only. Use Android's URI parser
+            // for the certificate-pinner hostname so a valid pairing URL is not
+            // rejected before the socket is opened.
+            val host = requireNotNull(Uri.parse(profile.gatewayUrl).host) { "Gateway host is missing" }
             client = OkHttpClient.Builder()
                 .pingInterval(45, TimeUnit.SECONDS)
                 .certificatePinner(CertificatePinner.Builder().add(host, profile.certificatePin).build())
