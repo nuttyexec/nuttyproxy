@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Platform-side mirror of the Compose palette in ui/theme/Color.kt.
+  Only the tokens the *system* needs live here (window chrome, launcher,
+  notification accent). Everything else is Compose-only — one source of truth.
+-->
+<resources>
+    <color name="nutty_bg">#FF0B0C0E</color>
+    <color name="nutty_tab_bar">#FF0E0F12</color>
+    <color name="nutty_green">#FF3ECF8E</color>
+    <color name="nutty_amber">#FFE8B23A</color>
+    <color name="nutty_red">#FFE5544B</color>
+    <color name="nutty_grey">#FF6A717A</color>
+</resources>

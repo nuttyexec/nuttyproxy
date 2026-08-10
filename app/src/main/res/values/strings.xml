@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nutty Proxy</string>
+    <string name="agent_id">nutty-agent</string>
+
+    <!-- Ongoing notification -->
+    <string name="channel_status_name">Proxy status</string>
+    <string name="channel_status_desc">Ongoing state of the proxy agent. Cannot be turned off while the agent is serving.</string>
+    <string name="notif_connected_title">Connected · %1$d connections</string>
+    <string name="notif_attention_title">Serving, but at risk</string>
+    <string name="notif_reconnecting_title">Reconnecting · retry in %1$ds</string>
+    <string name="notif_paused_title">Paused by you</string>
+    <string name="notif_paused_body">Servers cannot reach this phone</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_fix">Fix</string>
+    <string name="action_details">Details</string>
+</resources>

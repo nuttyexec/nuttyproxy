@@ -1,0 +1,84 @@
+# Phone Proxy Agent protocol v1
+
+This protocol is intentionally project-neutral. A gateway implementation only
+needs a public WSS endpoint, a durable store of enrolled public keys, and a
+loopback HTTP proxy listener for each active phone.
+
+## Pairing payload
+
+The CLI prints this JSON for the Android app to scan or paste:
+
+```json
+{
+  "version": 1,
+  "gatewayUrl": "wss://proxy.example.com/phone-agent/v1",
+  "certificatePin": "sha256/<base64-SPKI-pin>",
+  "agentId": "p1",
+  "serverName": "media-worker",
+  "enrollmentToken": "base64url-encoded-32-random-bytes",
+  "expiresAt": "2026-08-10T12:34:56.000Z"
+}
+```
+
+`enrollmentToken` contains 32 CSPRNG bytes, is valid for at most 60 minutes,
+and is consumed during the first authenticated connection. It is not a
+long-term credential. The Android app rejects an expired payload and creates a
+P-256 private key in Android Keystore, sending only its public JWK during this
+first connection.
+
+## Authentication
+
+After TLS validation and certificate pinning:
+
+```text
+phone → gateway  hello         {type, version, agentId, enrollmentToken?, publicKeyJwk?}
+gateway → phone  challenge     {type, version, challenge}
+phone → gateway  authenticate  {type, signature}
+gateway → phone  ready         {type, agentId, heartbeatIntervalMs}
+```
+
+The challenge signature payload is UTF-8:
+
+```text
+phone-proxy-agent/v1\n<agentId>\n<challenge>
+```
+
+P-256 uses `SHA256withECDSA` with the DER signature bytes, Base64URL encoded.
+The generic CLI also accepts Ed25519 where the phone supports it. Once paired,
+the gateway uses the stored public JWK and no longer accepts a replacement key
+for the same `agentId`; revoke and pair again to rotate an identity.
+
+## Proxy streams
+
+The host project opens an ordinary HTTP proxy connection to its local assigned
+port. The gateway parses either HTTPS `CONNECT` or absolute-form `http://`
+requests and asks the phone to open the destination socket:
+
+```text
+gateway → phone  open          {type, streamId, method, host, port}
+phone → gateway  opened        {type, streamId}
+gateway ↔ phone  close         {type, streamId}
+phone → gateway  stream_error  {type, streamId, message}
+phone → gateway  heartbeat     {type}
+gateway → phone  heartbeat_ack {type}
+```
+
+Binary data frames are:
+
+```text
+1 byte frame type + 4 byte big-endian stream id + payload
+1 = gateway → phone
+2 = phone → gateway
+```
+
+There is no polling or cloud push dependency. The app maintains the WSS
+connection while serving, and periodic WebSocket ping plus a 90-second protocol
+heartbeat detect a dead NAT mapping while idle.
+
+## Non-goals and boundaries
+
+- The protocol does not make a proxy port public. Host-side callers must be
+  trusted because they can use the phone's egress IP.
+- It does not inspect or persist headers, request bodies, or credentials.
+- It does not grant one project access to another project's agent: use separate
+  gateway state directories and proxy ports for separate trust boundaries.

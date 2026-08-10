@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nutty Proxy is dark-only by design: the instrument-panel neutrals are
+         the identity, so there is no values-night/ counterpart and no light
+         variant to drift out of sync. -->
+    <style name="Theme.NuttyProxy" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/nutty_bg</item>
+        <item name="android:navigationBarColor">@color/nutty_tab_bar</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">@color/nutty_bg</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

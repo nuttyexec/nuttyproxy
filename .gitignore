@@ -1,0 +1,75 @@
+# Public repository allowlist. Everything not explicitly re-included below stays local.
+/*
+
+!/.gitignore
+!/README.md
+!/build.gradle.kts
+!/settings.gradle.kts
+!/gradle.properties
+!/gradlew
+!/gradlew.bat
+!/gradle/
+!/gradle/wrapper/
+!/gradle/wrapper/gradle-wrapper.jar
+!/gradle/wrapper/gradle-wrapper.properties
+
+# Android runtime and release-build definition only.
+!/app/
+!/app/build.gradle.kts
+!/app/proguard-rules.pro
+!/app/src/
+!/app/src/main/
+!/app/src/main/**
+
+# Reusable server CLI: executable, install lockfile, and operator/protocol docs.
+!/cli/
+!/cli/package.json
+!/cli/package-lock.json
+!/cli/README.md
+!/cli/PROTOCOL.md
+!/cli/bin/
+!/cli/bin/phone-proxy-agent.mjs
+
+# Private design handoff and non-runtime development material.
+/DESIGN.md
+/design/
+/app/src/main/java/dev/nutty/proxy/ui/preview/
+/cli/test/
+/cli/systemd/
+
+# Generated local build/install artifacts.
+/.gradle/
+/local.properties
+/app/build/
+/cli/node_modules/
+/*.apk
+/*.aab
+/*.tgz
+
+# Per-project Phone Proxy Agent state. Pairing tokens and enrolled public keys
+# live here and must never be committed.
+/.phone-proxy-agent/
+/cli/.phone-proxy-agent/
+**/agents.json
+**/config.json
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+
+# Secrets and release signing material.
+/.env
+/.env.*
+!/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/key.properties
+**/signing.properties
+/secrets/
+
+# OS/editor files.
+.DS_Store
+Thumbs.db

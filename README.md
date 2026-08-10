@@ -1,0 +1,59 @@
+# Nutty Proxy — Android phone agent
+
+Nutty Proxy turns an Android phone into a persistent, outbound proxy agent. It
+uses a certificate-pinned WSS tunnel to a project's own Phone Proxy Agent
+gateway. The phone makes the outbound connection; no port is opened on the
+phone and the server never receives a phone private key.
+
+## What is implemented
+
+- QR camera scan and manual paste of a one-time pairing JSON payload.
+- P-256 device identity generated in Android Keystore. The private key is never
+  exported; after enrollment the server verifies a signed challenge.
+- One certificate-pinned WebSocket tunnel per paired server, multiplexing raw
+  TCP proxy streams over binary frames.
+- Foreground service, persistent notification, reconnect backoff, network-change
+  recovery, and boot/package-update restart.
+- Per-server pause/resume and local revocation; server list, connection state,
+  live streams, session traffic, and a bounded local activity log.
+- First-run readiness checklist for notification permission, battery exemption,
+  background-data settings, and OEM app settings.
+
+Activity logging deliberately keeps only time, server, method, and destination
+host/port. It does not retain proxy request bodies, headers, credentials, or
+URLs/paths.
+
+## Generic server CLI
+
+The companion [`cli/`](cli/) package is the reusable server-side gateway for
+any project. It supplies `init`, `serve`, `pair`, and `agents` commands. Each
+project runs its own instance and state directory, gets an outbound WSS tunnel
+from the phone, and consumes the assigned `127.0.0.1:<port>` HTTP proxy.
+
+Generate a short-lived pairing payload with the CLI, render it as a QR code,
+then scan it in the app. A valid payload contains `gatewayUrl` (`wss://` only),
+`certificatePin`, `agentId`, server name, and a one-time enrollment token. The
+certificate pin makes a QR payload safe from ordinary DNS or CA interception.
+See [`cli/README.md`](cli/README.md) for the server setup, reverse proxy
+configuration, pairing flow, and lifecycle commands.
+
+## Build
+
+Requires JDK 17, Android SDK platform 35, build-tools 35.0.0, and Gradle 8.9.
+
+```bash
+printf 'sdk.dir=/absolute/path/to/android-sdk\n' > local.properties
+gradle wrapper --gradle-version 8.9
+./gradlew :app:assembleDebug
+```
+
+The verified debug artifact is written to
+`app/build/outputs/apk/debug/app-debug.apk`. A release signing configuration is
+intentionally not committed: create and protect the signing key before putting
+an APK behind the blog download QR.
+
+## Design source
+
+The original Compose design system and fifteen preview frames remain under
+`design/`, `DESIGN.md`, and `ui/preview/Frames.kt`. The design shell now reads
+the agent's real state; preview frames use the normal ViewModel factory.

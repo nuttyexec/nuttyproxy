@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground: the same green "N" tile the ongoing notification
+  uses as its app chip, sized inside the 66dp safe zone of the 108dp viewport.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Green tile, 56x56 centred, 16dp corner radius -->
+    <path
+        android:pathData="M42,26h24a16,16 0,0 1,16 16v24a16,16 0,0 1,-16 16h-24a16,16 0,0 1,-16 -16v-24a16,16 0,0 1,16 -16z"
+        android:fillColor="#3ECF8E" />
+
+    <!-- "N" knocked out in the app background colour -->
+    <path
+        android:pathData="M39,39h7.4v30h-7.4z M61.6,39h7.4v30h-7.4z M39,39h7.4l22.6,30h-7.4z"
+        android:fillColor="#0B0C0E" />
+</vector>

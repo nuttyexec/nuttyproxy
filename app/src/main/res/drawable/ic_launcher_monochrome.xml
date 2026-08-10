@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer (Android 13+): the glyph alone, system-tinted. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+
+    <path
+        android:pathData="M36,34h8.4v40h-8.4z M63.6,34h8.4v40h-8.4z M36,34h8.4l27.6,40h-8.4z"
+        android:fillColor="#FFFFFF" />
+</vector>
