@@ -49,6 +49,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
         when (intent?.action) {
             ACTION_PAUSE, ACTION_CANCEL_RETRY -> pauseServing()
             ACTION_RESUME, ACTION_RETRY -> resumeServing()
+            ACTION_RECONNECT -> reconnectAll()
             ACTION_ENROLL -> intent.getStringExtra(EXTRA_PAIRING)?.let(::enroll)
             ACTION_PAUSE_PROFILE -> intent.getStringExtra(EXTRA_PROFILE_ID)?.let(::pauseProfile)
             ACTION_RESUME_PROFILE -> intent.getStringExtra(EXTRA_PROFILE_ID)?.let(::resumeProfile)
@@ -166,6 +167,14 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
 
     private fun resumeServing() {
         store.setServingEnabled(true)
+        AgentRuntimeState.refresh(this)
+        ensureConnections()
+    }
+
+    private fun reconnectAll() {
+        if (!store.isServingEnabled()) return
+        connections.values.forEach { it.stop() }
+        connections.clear()
         AgentRuntimeState.refresh(this)
         ensureConnections()
     }
@@ -294,6 +303,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
         const val ACTION_RESUME = "dev.nutty.proxy.agent.RESUME"
         const val ACTION_CANCEL_RETRY = "dev.nutty.proxy.agent.CANCEL_RETRY"
         const val ACTION_RETRY = "dev.nutty.proxy.agent.RETRY"
+        const val ACTION_RECONNECT = "dev.nutty.proxy.agent.RECONNECT"
         const val ACTION_ENROLL = "dev.nutty.proxy.agent.ENROLL"
         const val ACTION_PAUSE_PROFILE = "dev.nutty.proxy.agent.PAUSE_PROFILE"
         const val ACTION_RESUME_PROFILE = "dev.nutty.proxy.agent.RESUME_PROFILE"

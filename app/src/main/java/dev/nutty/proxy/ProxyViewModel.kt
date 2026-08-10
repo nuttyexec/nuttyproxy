@@ -74,6 +74,12 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     fun saveDeviceName(name: String) {
         AgentStore(app).setDeviceName(name)
         AgentRuntimeState.refresh(app)
+        // The name is authenticated in the next tunnel hello. Reconnect now so
+        // a rename is visible to every paired server immediately, not only
+        // after a later network interruption or reboot.
+        if (AgentStore(app).isServingEnabled()) {
+            ProxyAgentService.command(app, ProxyAgentService.ACTION_RECONNECT)
+        }
     }
 
     fun enroll(rawPayload: String) = ProxyAgentService.enroll(app, rawPayload)

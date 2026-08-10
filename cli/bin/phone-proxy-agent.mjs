@@ -345,7 +345,16 @@ function runGateway(configFile, config) {
     const address = server.address();
     console.log(`Phone Proxy Agent gateway listening on ${config.gatewayHost}:${address.port}${config.path}`);
   });
-  const stop = () => { clearInterval(timer); watcher.close(); if (reconcileTimer) clearTimeout(reconcileTimer); for (const connection of active.values()) connection.stop(); server.close(() => process.exit(0)); };
+  const stop = () => {
+    clearInterval(timer); watcher.close(); if (reconcileTimer) clearTimeout(reconcileTimer);
+    // HTTP server.close() waits for upgraded WebSocket sockets. Terminate them
+    // first so a systemd restart never hangs until its stop timeout.
+    for (const client of wss.clients) client.terminate();
+    for (const connection of active.values()) connection.stop();
+    wss.close();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5_000).unref();
+  };
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
