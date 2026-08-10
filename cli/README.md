@@ -28,6 +28,7 @@ sudo nuttyproxy setup
 `setup` lists the HTTPS domains already configured in Nginx and the detected
 public IP as separate numbered choices. Select the address type you want; at
 the next prompt, press Enter to use the standard WSS path, `/nutty-proxy`.
+At every prompt, Enter accepts the value shown in square brackets.
 
 It adds only one exact Nginx location, calculates the certificate SPKI pin,
 stores the server-wide configuration in `/var/lib/nuttyproxy`, and creates the
@@ -37,11 +38,13 @@ single boot-persistent `nuttyproxy.service`. The local gateway remains bound to
 For a fixed public IP, select the detected public-IP choice. `setup` then uses
 a separate HTTPS port (default `8443`) so it does not replace another site's
 TLS default, and requests a six-day Let's Encrypt IP certificate. This needs
-Certbot 5.3+ and briefly stops Nginx for the HTTP validation; Certbot saves the
-renewal hooks and reuses the key so the app's SPKI pin remains stable. Domain
-mode is preferable when a domain already exists. Active UFW installations are
-opened automatically for that selected port; allow the same TCP port in any
-cloud/provider firewall yourself.
+Certbot 5.3+; if the installed version is older, `setup` asks before replacing
+the Ubuntu `certbot` package with the official snap release, then continues.
+The IP validation briefly stops Nginx; Certbot saves the renewal hooks and
+reuses the key so the app's SPKI pin remains stable. Domain mode is preferable
+when a domain already exists. Active UFW installations are opened automatically
+for that selected port; allow the same TCP port in any cloud/provider firewall
+yourself.
 
 The public endpoint accepts only the WSS upgrade. Before a phone becomes
 usable, it must present the one-time pairing token and prove possession of its

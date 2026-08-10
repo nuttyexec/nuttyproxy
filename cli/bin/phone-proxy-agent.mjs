@@ -524,6 +524,35 @@ async function ask(terminal, prompt, defaultValue = "") {
   const answer = (await terminal.question(`${prompt}${suffix}: `)).trim();
   return answer || defaultValue;
 }
+async function ensureIpCertificateClient(terminal) {
+  let command = "certbot"; let rawVersion = run(command, ["--version"]); let version = parseVersion(rawVersion);
+  if (atLeastVersion(version, [5, 3, 0])) return command;
+  if (!terminal) throw new Error("public-IP setup needs a terminal to confirm the Certbot update");
+  console.log(`\nPublic-IP mode needs Certbot 5.3+ (found ${rawVersion.trim() || "unknown"}).`);
+  const update = (await ask(terminal, "Update Certbot now using the official snap package", "N")).toLowerCase();
+  if (update !== "y" && update !== "yes") {
+    throw new Error("public-IP setup cancelled; choose an HTTPS domain or update Certbot and run setup again");
+  }
+  if (!fs.existsSync("/usr/bin/snap") && !fs.existsSync("/snap/bin/snap")) {
+    throw new Error("snapd is required to update Certbot automatically; install snapd, then run setup again");
+  }
+  // Certbot recommends removing an OS-package installation before installing
+  // its snap so `certbot` cannot resolve to an older incompatible binary.
+  run("apt-get", ["remove", "--yes", "certbot"]);
+  const snapPresent = childProcess.spawnSync("snap", ["list", "certbot"], { stdio: "ignore" }).status === 0;
+  if (!snapPresent) run("snap", ["install", "--classic", "certbot"]);
+  const link = "/usr/local/bin/certbot";
+  if (fs.existsSync(link) || fs.lstatSync(link, { throwIfNoEntry: false })) {
+    let target = "";
+    try { target = fs.realpathSync(link); } catch { /* dangling symlink */ }
+    if (target && target !== "/snap/bin/certbot") throw new Error(`${link} already belongs to another Certbot installation; finish the upgrade manually`);
+  }
+  run("ln", ["-sfn", "/snap/bin/certbot", link]);
+  command = "/snap/bin/certbot"; rawVersion = run(command, ["--version"]); version = parseVersion(rawVersion);
+  if (!atLeastVersion(version, [5, 3, 0])) throw new Error(`Certbot update did not provide version 5.3+ (found ${rawVersion.trim() || "unknown"})`);
+  console.log(`Updated Certbot to ${rawVersion.trim()}.`);
+  return command;
+}
 function installService(options = {}) {
   const { user } = requireRootSetup();
   const { file } = loadConfig(options); const stateDir = path.dirname(file);
@@ -539,11 +568,7 @@ function installService(options = {}) {
 
 function ipCertificateName(ip) { return `nuttyproxy-ip-${ip.replace(/[^A-Za-z0-9]/g, "-")}`; }
 async function configureIpEndpoint(ip, pathValue, terminal) {
-  const rawVersion = run("certbot", ["--version"]);
-  const version = parseVersion(rawVersion);
-  if (!atLeastVersion(version, [5, 3, 0])) {
-    throw new Error(`public-IP TLS needs Certbot 5.3 or newer (found ${rawVersion.trim() || "unknown"}). Use an existing domain now, or upgrade Certbot before choosing the IP route.`);
-  }
+  const certbot = await ensureIpCertificateClient(terminal);
   const email = await ask(terminal, "Let's Encrypt renewal email");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("a valid renewal email is required for a public-IP certificate");
   const portText = await ask(terminal, "Public HTTPS port", String(DEFAULT_IP_TLS_PORT));
@@ -553,7 +578,7 @@ async function configureIpEndpoint(ip, pathValue, terminal) {
   const confirmation = (await ask(terminal, "Certbot will briefly stop Nginx to validate the IP certificate. Continue", "Y")).toLowerCase();
   if (confirmation !== "y" && confirmation !== "yes") throw new Error("setup cancelled");
   const name = ipCertificateName(ip);
-  run("certbot", [
+  run(certbot, [
     "certonly", "--standalone", "--non-interactive", "--agree-tos", "--preferred-profile", "shortlived",
     "--ip-address", ip, "--email", email, "--cert-name", name, "--reuse-key",
     "--pre-hook", "systemctl stop nginx", "--post-hook", "systemctl start nginx", "--deploy-hook", "systemctl reload nginx",
@@ -584,6 +609,7 @@ async function commandSetup(options) {
   if (!process.stdin.isTTY && !options.address) throw new Error("setup needs a terminal (or the advanced --address option)");
   const terminal = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
   try {
+    if (!options.address) console.log("\nPress Enter to accept a value shown in [brackets].");
     const entries = [
       ...candidates.map((address) => ({ kind: "domain", address })),
       ...(detectedIp ? [{ kind: "ip", address: detectedIp }] : []),
