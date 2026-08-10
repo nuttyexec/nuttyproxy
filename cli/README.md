@@ -12,7 +12,7 @@ with `npm pack`. Download the exact release version on the project server; this
 does not require the package to be published to npm.
 
 ```bash
-release_version=0.1.2
+release_version=0.1.3
 install_dir=/opt/nutty-proxy-agent
 mkdir -p "$install_dir"
 curl -fL "https://github.com/nuttyexec/nuttyproxy/releases/download/v${release_version}/nutty-proxy-phone-proxy-agent-${release_version}.tgz" \
@@ -27,6 +27,11 @@ nuttyproxy --help
 
 Verify the release checksum if one is supplied. The release tarball intentionally
 contains only the CLI runtime, lockfile, and operator/protocol documentation.
+
+`nuttyproxy installqr` prints the current APK download QR. It uses GitHub's
+`releases/latest` redirect, so an installed CLI does not need an update merely
+because a newer Android app was released. Pass `--url` to pin a specific HTTPS
+APK URL instead.
 
 ## Configure
 

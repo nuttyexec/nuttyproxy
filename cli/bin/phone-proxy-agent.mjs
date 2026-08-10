@@ -25,8 +25,11 @@ const MAX_WS_BUFFERED = 2 * 1024 * 1024;
 const ENROLLMENT_RESERVATION_TIMEOUT = 60_000;
 const FRAME_TO_PHONE = 1;
 const FRAME_TO_GATEWAY = 2;
-const PACKAGE_VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
-const DEFAULT_INSTALL_URL = `https://github.com/nuttyexec/nuttyproxy/releases/download/v${PACKAGE_VERSION}/app-release.apk`;
+// This GitHub endpoint redirects to the APK asset on the newest published
+// release.  The install QR is intentionally not tied to the CLI's own version:
+// an operator may keep a stable gateway running while installing the current
+// phone app.
+const DEFAULT_INSTALL_URL = "https://github.com/nuttyexec/nuttyproxy/releases/latest/download/app-release.apk";
 
 function fail(message) { console.error(`phone-proxy-agent: ${message}`); process.exitCode = 1; }
 function usage() {
