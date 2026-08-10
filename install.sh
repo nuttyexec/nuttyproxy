@@ -49,4 +49,4 @@ else
   sudo chmod 755 /usr/local/bin/nuttyproxy
 fi
 
-echo 'Nutty Proxy CLI installed. Run: nuttyproxy setup'
+echo 'Nutty Proxy CLI installed. Run: sudo nuttyproxy setup'
