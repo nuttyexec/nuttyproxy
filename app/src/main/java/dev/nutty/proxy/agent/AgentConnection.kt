@@ -21,6 +21,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
 
@@ -50,6 +51,7 @@ class AgentConnection(
     @Volatile private var bytesSent = 0L
     @Volatile private var bytesReceived = 0L
     private val disconnectedReported = AtomicBoolean(false)
+    private val lastStreamReportAt = AtomicLong(0)
     private var client: OkHttpClient? = null
     private val identityScope = "${profile.gatewayUrl}\n${profile.agentId}"
 
@@ -165,7 +167,7 @@ class AgentConnection(
                 }
                 sockets[streamId] = remote
                 socket?.send(JSONObject().put("type", "opened").put("streamId", streamId).toString())
-                emitStreamState()
+                emitStreamState(force = true)
                 val input = remote.getInputStream()
                 val buffer = ByteArray(16 * 1024)
                 while (!remote.isClosed) {
@@ -216,10 +218,29 @@ class AgentConnection(
         if (streamId < 0) return
         sockets.remove(streamId)?.let { runCatching { it.close() } }
         if (notifyGateway) socket?.send(JSONObject().put("type", "closed").put("streamId", streamId).toString())
-        emitStreamState()
+        emitStreamState(force = true)
     }
 
-    private fun emitStreamState() = listener.onStream(profile, sockets.size, bytesSent, bytesReceived)
+    /**
+     * A busy stream can deliver dozens of 16 KiB frames per second. Updating a
+     * StateFlow and foreground notification for every frame burns battery and
+     * wakes Compose without making the UI meaningfully fresher. Counts still
+     * update immediately when a stream opens or closes; byte totals are sampled
+     * at most once a second while traffic flows.
+     */
+    private fun emitStreamState(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force) {
+            while (true) {
+                val previous = lastStreamReportAt.get()
+                if (now - previous < STREAM_REPORT_INTERVAL_MS) return
+                if (lastStreamReportAt.compareAndSet(previous, now)) break
+            }
+        } else {
+            lastStreamReportAt.set(now)
+        }
+        listener.onStream(profile, sockets.size, bytesSent, bytesReceived)
+    }
 
     private fun closeWithError(detail: String) {
         socket?.close(1008, detail)
@@ -243,5 +264,9 @@ class AgentConnection(
         if (!stopped && disconnectedReported.compareAndSet(false, true)) {
             listener.onDisconnected(profile, reason)
         }
+    }
+
+    private companion object {
+        const val STREAM_REPORT_INTERVAL_MS = 1_000L
     }
 }
