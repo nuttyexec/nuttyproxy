@@ -157,7 +157,6 @@ fun NuttyApp(
                     initialName = resolvedDeviceName,
                     onContinue = { name ->
                         model.saveDeviceName(name)
-                        pendingPairing?.let(model::enroll)
                         go(Screen.Ready)
                     },
                 )
@@ -169,7 +168,15 @@ fun NuttyApp(
                     onBattery = { activity?.let { model.requestBatteryUnrestricted(it) } },
                     onData = { activity?.let { model.openDataSettings(it) } },
                     onAppSettings = { activity?.let { model.openAppSettings(it) } },
-                    onSkip = { go(Screen.Test) },
+                    onSkip = {
+                        // A foreground service must be started only after the
+                        // user has had a chance to grant its notification
+                        // permission.  Starting it from the naming screen made
+                        // first-run failures look like a pairing/UI crash.
+                        pendingPairing?.let(model::enroll)
+                        pendingPairing = null
+                        go(Screen.Test)
+                    },
                 )
 
                 Screen.Test -> TestScreen(

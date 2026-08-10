@@ -39,7 +39,15 @@ object AlwaysOnSetup {
             ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
 
     fun openDataSettings(activity: Activity) {
-        activity.startActivity(Intent(Settings.ACTION_DATA_USAGE_SETTINGS))
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Intent(Settings.ACTION_DATA_USAGE_SETTINGS)
+        } else {
+            // The system-wide data usage screen was added in API 28.  The
+            // per-app page is the closest safe destination on Android 8.0/8.1.
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:${activity.packageName}"))
+        }
+        activity.startActivity(intent)
     }
 
     fun openAppSettings(activity: Activity) {

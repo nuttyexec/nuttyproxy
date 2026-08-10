@@ -495,7 +495,7 @@ fun ReadyScreen(
         }
 
         Spacer(Modifier.weight(1f))
-        OutlineButton("Skip for now", onSkip)
+        PrimaryButton("Start proxy", onSkip)
     }
 }
 

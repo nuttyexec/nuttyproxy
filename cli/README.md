@@ -1,4 +1,4 @@
-# `phone-proxy-agent` CLI
+# `nuttyproxy` CLI
 
 This is the generic server-side control plane for the Android app. It is not
 tied to a single domain or any particular workload. Any project can run
@@ -12,22 +12,21 @@ with `npm pack`. Download the exact release version on the project server; this
 does not require the package to be published to npm.
 
 ```bash
-release_version=0.1.0
+release_version=0.1.2
 install_dir=/opt/nutty-proxy-agent
 mkdir -p "$install_dir"
-curl -fL "https://github.com/<owner>/<repo>/releases/download/v${release_version}/nutty-proxy-phone-proxy-agent-${release_version}.tgz" \
+curl -fL "https://github.com/nuttyexec/nuttyproxy/releases/download/v${release_version}/nutty-proxy-phone-proxy-agent-${release_version}.tgz" \
   -o /tmp/nutty-proxy-agent.tgz
 tar -xzf /tmp/nutty-proxy-agent.tgz --strip-components=1 -C "$install_dir"
 cd "$install_dir"
 npm ci --omit=dev
-node bin/phone-proxy-agent.mjs --help
+chmod 755 "$install_dir/bin/phone-proxy-agent.mjs"
 sudo ln -sf "$install_dir/bin/phone-proxy-agent.mjs" /usr/local/bin/nuttyproxy
+nuttyproxy --help
 ```
 
-Replace `<owner>/<repo>` with this repository's public GitHub path before
-publishing the release. Verify the release checksum if one is supplied. The
-release tarball intentionally contains only the CLI runtime, lockfile, and
-operator/protocol documentation.
+Verify the release checksum if one is supplied. The release tarball intentionally
+contains only the CLI runtime, lockfile, and operator/protocol documentation.
 
 ## Configure
 

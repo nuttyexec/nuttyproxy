@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -29,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** CameraX + ML Kit scanner. Pairing payloads are parsed by the screen, never trusted here. */
 @Composable
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 fun QrScanner(
     modifier: Modifier = Modifier,
     onPayload: (String) -> Unit,
