@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import android.app.Activity
 import dev.nutty.proxy.ProxyViewModel
+import dev.nutty.proxy.ReleaseUpdate
 import androidx.compose.ui.Modifier
 import dev.nutty.proxy.ui.component.BottomTabs
 import dev.nutty.proxy.ui.component.HomeIndicator
@@ -60,6 +61,7 @@ fun NuttyApp(
 ) {
     val model: ProxyViewModel = viewModel ?: composeViewModel()
     val snapshot by model.snapshot.collectAsState()
+    val update by model.update.collectAsState()
     val context = LocalContext.current
     val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -155,6 +157,9 @@ fun NuttyApp(
                     onAppSettings = { activity?.let { model.openAppSettings(it) } },
                     onRename = model::saveDeviceName,
                     onDisconnectAll = model::removeAllPairings,
+                    update = update,
+                    onCheckForUpdate = model::checkForUpdate,
+                    onDownloadUpdate = { activity?.let { model.downloadUpdate(it, update) } },
                     modifier = Modifier.fillMaxSize(),
                 )
 

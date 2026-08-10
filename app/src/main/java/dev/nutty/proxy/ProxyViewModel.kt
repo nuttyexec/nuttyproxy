@@ -6,8 +6,11 @@ import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.compose.ui.graphics.Color
 import dev.nutty.proxy.agent.AgentEvent
@@ -28,16 +31,32 @@ import dev.nutty.proxy.ui.model.SheetKey
 import dev.nutty.proxy.ui.model.SheetRow
 import dev.nutty.proxy.ui.model.SheetSpec
 import dev.nutty.proxy.ui.theme.NuttyColor
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 
 data class NetworkSummary(val label: String, val caption: String)
+data class ReleaseUpdate(
+    val checking: Boolean = false,
+    val available: Boolean = false,
+    val version: String? = null,
+    val downloadUrl: String? = null,
+    val message: String = "Check for updates",
+)
 
 class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     val snapshot: StateFlow<AgentSnapshot> = AgentRuntimeState.snapshot
+    private val mutableUpdate = MutableStateFlow(ReleaseUpdate())
+    val update: StateFlow<ReleaseUpdate> = mutableUpdate
+    private val updateExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
         AgentRuntimeState.load(app)
@@ -221,6 +240,57 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     fun openDataSettings(activity: Activity) = AlwaysOnSetup.openDataSettings(activity)
     fun openAppSettings(activity: Activity) = AlwaysOnSetup.openAppSettings(activity)
 
+    /** Check the public GitHub release feed. APK installation is still confirmed
+     * by Android; sideloaded apps must never silently replace themselves. */
+    fun checkForUpdate() {
+        if (mutableUpdate.value.checking) return
+        mutableUpdate.value = mutableUpdate.value.copy(checking = true, message = "Checking…")
+        updateExecutor.execute {
+            val result: Result<Pair<String, String>> = runCatching {
+                val connection = (URL("https://api.github.com/repos/nuttyexec/nuttyproxy/releases/latest").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("User-Agent", "Nutty-Proxy-Android")
+                }
+                try {
+                    require(connection.responseCode == HttpURLConnection.HTTP_OK) { "Release check failed (${connection.responseCode})" }
+                    val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    val version = release.getString("tag_name")
+                    val assets = release.getJSONArray("assets")
+                    val downloadUrl = (0 until assets.length())
+                        .map { assets.getJSONObject(it) }
+                        .firstOrNull { it.optString("name") == "Nutty-Proxy.apk" }
+                        ?.getString("browser_download_url")
+                        ?: error("Release APK is missing")
+                    version to downloadUrl
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            mainHandler.post {
+                result.onSuccess { (version, url) ->
+                    val currentVersion = currentVersion()
+                    val available = isNewerVersion(version, currentVersion)
+                    mutableUpdate.value = ReleaseUpdate(
+                        available = available,
+                        version = version,
+                        downloadUrl = if (available) url else null,
+                        message = if (available) "$version available" else "Up to date · $currentVersion",
+                    )
+                }.onFailure { error ->
+                    mutableUpdate.value = ReleaseUpdate(message = error.message ?: "Could not check for updates")
+                }
+            }
+        }
+    }
+
+    fun downloadUpdate(activity: Activity, update: ReleaseUpdate) {
+        val url = update.downloadUrl ?: return
+        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
     fun copyErrorLog(context: Context, snapshot: AgentSnapshot) {
         val text = diagnosticReport(snapshot)
         context.getSystemService(ClipboardManager::class.java)
@@ -244,6 +314,27 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("${time(event)} ${event.kind}: ${event.detail}")
         }
     }
+
+    override fun onCleared() {
+        updateExecutor.shutdownNow()
+        super.onCleared()
+    }
+
+    private fun isNewerVersion(candidate: String, current: String): Boolean {
+        val candidateParts = candidate.removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }
+        val max = maxOf(candidateParts.size, currentParts.size)
+        for (index in 0 until max) {
+            val difference = (candidateParts.getOrElse(index) { 0 }).compareTo(currentParts.getOrElse(index) { 0 })
+            if (difference != 0) return difference > 0
+        }
+        return false
+    }
+
+    private fun currentVersion(): String = app.packageManager
+        .getPackageInfo(app.packageName, 0)
+        .versionName
+        ?: "0"
 
     private fun colorFor(kind: AgentEvent.Kind): Color = when (kind) {
         AgentEvent.Kind.Connection, AgentEvent.Kind.Request -> NuttyColor.Green

@@ -30,6 +30,7 @@ import dev.nutty.proxy.ui.model.ReadinessItem
 import dev.nutty.proxy.ui.theme.Dim
 import dev.nutty.proxy.ui.theme.NuttyColor
 import dev.nutty.proxy.ui.theme.NuttyType
+import dev.nutty.proxy.ReleaseUpdate
 
 /** Settings only exposes controls that change real agent or Android state. */
 @Composable
@@ -42,6 +43,9 @@ fun SettingsScreen(
     onAppSettings: () -> Unit,
     onRename: (String) -> Unit,
     onDisconnectAll: () -> Unit,
+    update: ReleaseUpdate,
+    onCheckForUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editingName by remember { mutableStateOf(false) }
@@ -136,6 +140,15 @@ fun SettingsScreen(
                     valueColor = NuttyColor.TextMuted,
                     chevron = true,
                     onClick = onAppSettings,
+                )
+                CardDivider()
+                DetailRow(
+                    label = "App update",
+                    value = update.message,
+                    labelColor = NuttyColor.TextSecondary,
+                    valueColor = if (update.available) NuttyColor.Green else NuttyColor.TextMuted,
+                    chevron = !update.checking,
+                    onClick = if (update.checking) null else if (update.available) onDownloadUpdate else onCheckForUpdate,
                 )
             }
         }

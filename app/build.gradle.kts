@@ -16,8 +16,8 @@ android {
         applicationId = "dev.nutty.proxy"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.4.9"
+        versionCode = 9
+        versionName = "0.1.14"
     }
 
     signingConfigs {
