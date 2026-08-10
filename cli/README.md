@@ -86,7 +86,7 @@ name in the app, approve the always-on checklist, then tap **Start proxy**.
 The CLI automatically creates the opaque agent ID and selects an unused random
 loopback port; it prints the resulting proxy URL beneath the QR.
 
-### 6. Make a proxy call
+### 6. Make calls through the phone
 
 After the app says connected, list the assigned proxy address:
 
@@ -94,15 +94,37 @@ After the app says connected, list the assigned proxy address:
 nuttyproxy agents list
 ```
 
-Then use the displayed address from any trusted process on this server. For
-example, if it shows `127.0.0.1:42731`:
+For a terminal command, let Nutty Proxy select the phone and set the standard
+`HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` variables. `api.ipify.org` below
+is only an example endpoint for checking the phone's egress IP:
 
 ```bash
-curl --proxy http://127.0.0.1:42731 https://api.ipify.org
+nuttyproxy run P1 -- curl https://api.ipify.org
 ```
 
-Only local processes can reach this port. Do not expose it through a firewall,
-reverse proxy, Docker port mapping, or public interface.
+HTTP methods, headers, and bodies remain normal client options. This example
+sends a JSON POST through the phone; `httpbin.org/anything` is only a test URL:
+
+```bash
+nuttyproxy run P1 -- curl -X POST https://httpbin.org/anything \
+  --header 'Content-Type: application/json' \
+  --data '{"message":"hello"}'
+```
+
+For a bot, worker, SDK, or any client that accepts a proxy URL, obtain it
+without copying a port from a table:
+
+```bash
+export NUTTY_PROXY_URL="$(nuttyproxy proxy P1)"
+curl --proxy "$NUTTY_PROXY_URL" https://api.ipify.org  # example only
+```
+
+The CLI is intentionally not in the data path for each request. It manages
+phones and launches commands with proxy environment variables; the client then
+connects directly to the local HTTP proxy. This keeps it compatible with curl,
+SDKs, bots, and other standard proxy-aware tools without adding a per-request
+CLI hop. Only local processes can reach that port. Do not expose it through a
+firewall, reverse proxy, Docker port mapping, or public interface.
 
 ## Everyday commands
 
@@ -110,6 +132,8 @@ reverse proxy, Docker port mapping, or public interface.
 nuttyproxy installqr
 nuttyproxy pair
 nuttyproxy agents list
+nuttyproxy proxy P1
+nuttyproxy run P1 -- curl https://example.com
 ```
 
 Use the `agentId` shown by `agents list` only for access administration:
