@@ -173,7 +173,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
 
     private fun startProfile(profile: AgentProfile, enrollmentToken: String? = null) {
         if (connections.containsKey(profile.id)) return
-        val connection = AgentConnection(profile, enrollmentToken, identity, this)
+        val connection = AgentConnection(profile, enrollmentToken, store.deviceName(), identity, this)
         connections[profile.id] = connection
         connection.connect()
     }

@@ -7,12 +7,13 @@
  * a standard HTTP CONNECT proxy.
  */
 import crypto from "node:crypto";
+import childProcess from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline/promises";
 import QRCode from "qrcode";
 import qrTerminal from "qrcode-terminal";
 import WebSocket, { WebSocketServer } from "ws";
@@ -40,6 +41,7 @@ nuttyproxy <command>
   serve     run the local WSS gateway and loopback proxy listeners
   pair      create and print a one-time Android pairing QR
   installqr print the Nutty Proxy APK download QR
+  service   install the one server-wide systemd daemon
   agents    list, disable, enable, or revoke enrolled phones
 
 Run 'nuttyproxy <command> --help' for command options.`);
@@ -56,7 +58,13 @@ function args(argv) {
   }
   return values;
 }
-function defaultStateDir() { return path.join(process.cwd(), ".phone-proxy-agent"); }
+function defaultStateDir() {
+  // Nutty Proxy is one server-wide daemon, not a project-local helper.  Its
+  // configuration and enrollment records must therefore never depend on the
+  // operator's current directory or home directory.
+  if (process.env.NUTTYPROXY_STATE_DIR) return path.resolve(process.env.NUTTYPROXY_STATE_DIR);
+  return "/var/lib/nuttyproxy";
+}
 function configPath(options) { return path.resolve(options.config || path.join(options["state-dir"] || defaultStateDir(), "config.json")); }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { if (error.code === "ENOENT") return fallback; throw error; } }
 function writeJson(file, value) {
@@ -87,6 +95,11 @@ function validPublicJwk(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (value.kty === "EC") return value.crv === "P-256" && typeof value.x === "string" && typeof value.y === "string";
   return value.kty === "OKP" && value.crv === "Ed25519" && typeof value.x === "string";
+}
+function deviceName(value) {
+  if (typeof value !== "string") return "Phone";
+  const normalized = value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 32);
+  return normalized || "Phone";
 }
 function validateConfig(config) {
   const url = new URL(config.publicUrl);
@@ -237,6 +250,28 @@ function consumeEnrollment(stateFile, enrollment, record) {
   saveData(stateFile, data);
   return true;
 }
+function portInUse(data, host, port) {
+  return [...data.agents, ...data.enrollments.filter((entry) => !entry.claimedAt && entry.expiresAt > Date.now())]
+    .some((entry) => entry.listenHost === host && entry.listenPort === port);
+}
+async function portAvailable(host, port) {
+  const probe = net.createServer();
+  try {
+    await new Promise((resolve, reject) => { probe.once("error", reject); probe.listen(port, host, resolve); });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await new Promise((resolve) => probe.close(() => resolve()));
+  }
+}
+async function chooseProxyPort(data, host) {
+  for (let attempts = 0; attempts < 128; attempts += 1) {
+    const port = 42000 + crypto.randomInt(1000);
+    if (!portInUse(data, host, port) && await portAvailable(host, port)) return port;
+  }
+  throw new Error("could not find an unused loopback proxy port");
+}
 function runGateway(configFile, config) {
   validateConfig(config);
   const stateFile = dataFile(configFile); const active = new Map();
@@ -251,7 +286,7 @@ function runGateway(configFile, config) {
       const reserved = reserveEnrollment(stateFile, hello);
       if (!reserved) return ws.close(1008, "enrollment required");
       const { agent, enrollment } = reserved;
-      const record = agent || { agentId: enrollment.agentId, serverName: enrollment.serverName, listenHost: enrollment.listenHost, listenPort: enrollment.listenPort, enabled: true, publicKeyJwk: hello.publicKeyJwk };
+      const record = agent || { agentId: enrollment.agentId, deviceName: deviceName(hello.deviceName), serverName: enrollment.serverName, listenHost: enrollment.listenHost, listenPort: enrollment.listenPort, enabled: true, publicKeyJwk: hello.publicKeyJwk };
       if (!record.enabled) return ws.close(1008, "agent disabled");
       pending = { enrollment, record, challenge: base64Url(crypto.randomBytes(32)) }; sendJson(ws, { type: "challenge", version: VERSION, challenge: pending.challenge });
       // `ws` can invoke listeners added during the hello emission for that same
@@ -301,22 +336,36 @@ function runGateway(configFile, config) {
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
 }
 
-function commandInit(options) {
-  if (options.help) return console.log("init --public-url wss://proxy.example.com/phone-agent/v1 --certificate-pin sha256/... [--gateway-host 127.0.0.1 --gateway-port 41082 --path /phone-agent/v1 --state-dir DIR]");
-  if (!options["public-url"] || !validCertificatePin(options["certificate-pin"])) throw new Error("--public-url and a valid sha256/ --certificate-pin are required");
-  const publicUrl = new URL(options["public-url"]); if (publicUrl.protocol !== "wss:" || !publicUrl.hostname || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) throw new Error("--public-url must be a clean wss:// URL");
-  const file = configPath(options); const config = { version: VERSION, publicUrl: publicUrl.toString(), certificatePin: options["certificate-pin"], gatewayHost: options["gateway-host"] || "127.0.0.1", gatewayPort: Number(options["gateway-port"] || 41082), path: options.path || publicUrl.pathname, createdAt: new Date().toISOString() };
+async function commandInit(options) {
+  if (options.help) return console.log("init [--public-url wss://proxy.example.com/phone-agent/v1 --certificate-pin sha256/...]");
+  let publicUrlValue = options["public-url"];
+  let certificatePin = options["certificate-pin"];
+  if (!publicUrlValue || !certificatePin) {
+    if (!process.stdin.isTTY) throw new Error("--public-url and --certificate-pin are required without a terminal");
+    const terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      publicUrlValue ||= await terminal.question("Public WSS URL: ");
+      certificatePin ||= await terminal.question("TLS SPKI pin (sha256/...): ");
+    } finally { terminal.close(); }
+  }
+  if (!validCertificatePin(certificatePin)) throw new Error("certificate pin must be sha256/<32-byte-SPKI-base64>");
+  const publicUrl = new URL(publicUrlValue); if (publicUrl.protocol !== "wss:" || !publicUrl.hostname || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) throw new Error("public URL must be a clean wss:// URL");
+  const file = configPath(options); const config = { version: VERSION, publicUrl: publicUrl.toString(), serverName: options["server-name"] || publicUrl.hostname, certificatePin, gatewayHost: options["gateway-host"] || "127.0.0.1", gatewayPort: Number(options["gateway-port"] || 41082), path: options.path || publicUrl.pathname, createdAt: new Date().toISOString() };
   validateConfig(config);
   writeJson(file, config); console.log(`Wrote ${file}`);
 }
 async function commandPair(options) {
-  if (options.help) return console.log("pair --agent-id p1 --name P1 --listen-port 42080 [--json] [--qr-file p1.png] [--listen-host 127.0.0.1 --expires-minutes 10 --config FILE]");
-  const { file, config } = loadConfig(options); const agentId = options["agent-id"]; const serverName = options.name || agentId; const port = Number(options["listen-port"]); const minutes = Number(options["expires-minutes"] || 10);
+  if (options.help) return console.log("pair [--json] [--qr-file pairing.png] [--expires-minutes 10 --agent-id ID --listen-port PORT --listen-host 127.0.0.1]");
+  const { file, config } = loadConfig(options); const minutes = Number(options["expires-minutes"] || 10);
   const listenHost = options["listen-host"] || "127.0.0.1";
-  if (!agentId?.match(/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/) || !isLoopback(listenHost) || !Number.isInteger(port) || port < 1024 || port > 65535 || !Number.isFinite(minutes) || minutes < 1 || minutes > 60) throw new Error("invalid agent id, loopback host, port, or expiry");
+  if (!isLoopback(listenHost) || !Number.isFinite(minutes) || minutes < 1 || minutes > 60) throw new Error("invalid loopback host or expiry");
   const data = loadData(dataFile(file));
+  const agentId = options["agent-id"] || `agent_${base64Url(crypto.randomBytes(12))}`;
+  const port = options["listen-port"] === undefined ? await chooseProxyPort(data, listenHost) : Number(options["listen-port"]);
+  const serverName = config.serverName || new URL(config.publicUrl).hostname;
+  if (!agentId.match(/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/) || !Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("invalid agent id or loopback proxy port");
   if (data.agents.some((agent) => agent.agentId === agentId) || data.enrollments.some((entry) => entry.agentId === agentId && !entry.claimedAt && entry.expiresAt > Date.now())) throw new Error("agent id already exists or has an active pairing");
-  if ([...data.agents, ...data.enrollments.filter((entry) => !entry.claimedAt && entry.expiresAt > Date.now())].some((entry) => entry.listenHost === listenHost && entry.listenPort === port)) throw new Error("loopback proxy port is already assigned");
+  if (portInUse(data, listenHost, port) || !await portAvailable(listenHost, port)) throw new Error("loopback proxy port is already assigned");
   const token = base64Url(crypto.randomBytes(32)); const expiresAt = Date.now() + minutes * 60_000;
   data.enrollments = data.enrollments.filter((entry) => entry.expiresAt > Date.now() && !entry.claimedAt); data.enrollments.push({ tokenHash: tokenHash(token), agentId, serverName, listenHost, listenPort: port, expiresAt, claimedAt: null, reservedAt: null, claimNonce: null }); saveData(dataFile(file), data);
   const payload = { version: VERSION, gatewayUrl: config.publicUrl, certificatePin: config.certificatePin, agentId, serverName, enrollmentToken: token, expiresAt: new Date(expiresAt).toISOString() };
@@ -333,7 +382,7 @@ async function commandPair(options) {
     // additionally prints the machine-readable payload on stderr for a
     // controlled handoff; use --json alone for JSON-only automation.
     qrTerminal.generate(serialized, { small: true }, (qr) => process.stdout.write(qr));
-    console.error(`Pairing QR for ${agentId}; it expires at ${payload.expiresAt}`);
+    console.error(`Pairing QR ready; the phone chooses its name. Proxy: http://${listenHost}:${port}. Expires: ${payload.expiresAt}`);
     if (options.json) console.error(JSON.stringify(payload, null, 2));
   } else {
     console.log(JSON.stringify(payload, null, 2));
@@ -348,10 +397,32 @@ function commandInstallQr(options) {
   qrTerminal.generate(parsed.toString(), { small: true }, (qr) => process.stdout.write(qr));
   console.error(`APK download QR: ${parsed}`);
 }
+function systemdValue(value) { return `"${String(value).replace(/[\\"]/g, "\\$&")}"`; }
+function commandService(options) {
+  if (options.help || !options._[1]) return console.log("service install");
+  if (options._[1] !== "install") throw new Error("unknown service command");
+  if (process.platform !== "linux" || typeof process.getuid !== "function" || process.getuid() !== 0) {
+    throw new Error("run: sudo nuttyproxy service install");
+  }
+  const user = process.env.SUDO_USER;
+  if (!user?.match(/^[a-z_][a-z0-9_-]*[$]?$/i) || !process.env.SUDO_UID || !process.env.SUDO_GID) {
+    throw new Error("service install must be run through sudo by the daemon user");
+  }
+  const { file } = loadConfig(options);
+  const stateDir = path.dirname(file);
+  const entrypoint = fs.realpathSync(process.argv[1]);
+  const unit = `[Unit]\nDescription=Nutty Proxy gateway\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${systemdValue(path.dirname(entrypoint))}\nEnvironment=NUTTYPROXY_STATE_DIR=${systemdValue(stateDir)}\nExecStart=${systemdValue(process.execPath)} ${systemdValue(entrypoint)} serve\nRestart=on-failure\nRestartSec=3s\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n`;
+  fs.writeFileSync("/etc/systemd/system/nuttyproxy.service", unit, { mode: 0o644 });
+  for (const args of [["daemon-reload"], ["enable", "--now", "nuttyproxy.service"]]) {
+    const result = childProcess.spawnSync("systemctl", args, { stdio: "inherit" });
+    if (result.status !== 0) throw new Error(`systemctl ${args.join(" ")} failed`);
+  }
+  console.log(`Nutty Proxy is running as ${user} with state ${stateDir}`);
+}
 function commandAgents(options) {
   if (options.help) return console.log("agents list | agents disable --agent-id p1 | agents enable --agent-id p1 | agents revoke --agent-id p1");
   const { file } = loadConfig(options); const action = options._[1] || "list"; const data = loadData(dataFile(file));
-  if (action === "list") return console.table(data.agents.map(({ agentId, serverName, listenHost, listenPort, enabled }) => ({ agentId, serverName, proxy: `${listenHost}:${listenPort}`, enabled })));
+  if (action === "list") return console.table(data.agents.map(({ agentId, deviceName, serverName, listenHost, listenPort, enabled }) => ({ device: deviceName || agentId, agentId, server: serverName, proxy: `${listenHost}:${listenPort}`, enabled })));
   const agent = data.agents.find((entry) => entry.agentId === options["agent-id"]); if (!agent) throw new Error("agent not found");
   if (action === "revoke") data.agents = data.agents.filter((entry) => entry !== agent); else if (action === "disable") agent.enabled = false; else if (action === "enable") agent.enabled = true; else throw new Error("unknown agents action");
   saveData(dataFile(file), data); console.log(`${action}d ${agent.agentId}`);
@@ -359,11 +430,12 @@ function commandAgents(options) {
 
 try {
   const options = args(process.argv.slice(2)); const command = options._[0];
-  if (!command || options.help && !["init", "serve", "pair", "installqr", "agents"].includes(command)) usage();
-  else if (command === "init") commandInit(options);
+  if (!command || options.help && !["init", "serve", "pair", "installqr", "service", "agents"].includes(command)) usage();
+  else if (command === "init") await commandInit(options);
   else if (command === "serve") { if (options.help) console.log("serve [--config FILE]"); else { const { file, config } = loadConfig(options); runGateway(file, config); } }
   else if (command === "pair") await commandPair(options);
   else if (command === "installqr") commandInstallQr(options);
+  else if (command === "service") commandService(options);
   else if (command === "agents") commandAgents(options);
   else usage();
 } catch (error) { fail(error instanceof Error ? error.message : String(error)); }

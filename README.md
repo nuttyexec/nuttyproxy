@@ -7,18 +7,11 @@ phone and the server never receives a phone private key.
 
 ## Start here
 
-1. Install the Android APK from the latest GitHub Release on the phone.
-2. Install the matching `nuttyproxy` CLI release on the server, then configure
-   its public `wss://` URL and certificate pin.
-3. Run `nuttyproxy pair --agent-id p1 --name P1 --listen-port 42080` and scan
-   the QR shown in the terminal with the app.
-4. Once the app says connected, every trusted bot on that server can use:
-
-   ```bash
-   curl --proxy http://127.0.0.1:42080 https://ifconfig.me
-   ```
-
-The full copy-paste server setup and all commands are in
+The server setup is deliberately copy-and-paste driven: install the global CLI,
+run `nuttyproxy init` once, install its one system service, print the APK QR
+with `nuttyproxy installqr`, then pair each phone with `nuttyproxy pair`.
+`pair` automatically allocates the server identity and loopback port; the phone
+user chooses its name in the app. See the exact commands in
 [`cli/README.md`](cli/README.md).
 
 ## What is implemented
@@ -42,9 +35,10 @@ URLs/paths.
 ## Generic server CLI
 
 The companion [`cli/`](cli/) package is the reusable server-side gateway for
-any project. It supplies `init`, `serve`, `pair`, `installqr`, and `agents` commands. Each
-project runs its own instance and state directory, gets an outbound WSS tunnel
-from the phone, and consumes the assigned `127.0.0.1:<port>` HTTP proxy.
+the server. It supplies `init`, `service`, `pair`, `installqr`, and `agents`.
+One daemon owns the global `/var/lib/nuttyproxy` state, receives outbound WSS
+tunnels from paired phones, and exposes one assigned `127.0.0.1:<port>` HTTP
+proxy per phone.
 
 Generate a short-lived pairing payload with the CLI, render it as a QR code,
 then scan it in the app. A valid payload contains `gatewayUrl` (`wss://` only),

@@ -39,6 +39,7 @@ jobs:
           npm ci --ignore-scripts
           mkdir -p ../dist
           npm pack --pack-destination ../dist
+          mv ../dist/*.tgz ../dist/nuttyproxy-cli.tgz
 
       - name: Create GitHub Release
         env:
@@ -46,5 +47,5 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             app/build/outputs/apk/release/app-release.apk#Nutty-Proxy.apk \
-            dist/*.tgz \
+            dist/nuttyproxy-cli.tgz#nuttyproxy-cli.tgz \
             --generate-notes

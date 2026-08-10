@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AgentConnection(
     private val profile: AgentProfile,
     private val pairingToken: String?,
+    private val deviceName: String,
     private val identity: AgentIdentity,
     private val listener: Listener,
 ) {
@@ -65,6 +66,7 @@ class AgentConnection(
                     .put("type", "hello")
                     .put("version", 1)
                     .put("agentId", profile.agentId)
+                    .put("deviceName", deviceName)
                 if (!enrolled) {
                     hello.put("enrollmentToken", pairingToken)
                     hello.put("publicKeyJwk", JSONObject(identity.publicJwk(identityScope).value))
