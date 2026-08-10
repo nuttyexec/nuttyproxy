@@ -93,7 +93,14 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun servers(snapshot: AgentSnapshot): List<ServerInfo> = snapshot.profiles.map { profile ->
         val status = snapshot.statuses[profile.id]
-        val errors = snapshot.events.count { it.profileId == profile.id && it.kind == AgentEvent.Kind.Error }
+        // A server card is a live state surface. Keeping the first historical
+        // error here made a healthy connection look failed forever; history
+        // remains available in Activity instead.
+        val hasCurrentConnectionProblem = status?.phase in setOf(
+            ConnectionPhase.Attention,
+            ConnectionPhase.Reconnecting,
+            ConnectionPhase.Disconnected,
+        )
         ServerInfo(
             id = profile.id,
             name = profile.serverName,
@@ -106,9 +113,9 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
             },
             streams = (status?.activeStreams ?: 0).toString(),
             today = formatBytes((status?.bytesUp ?: 0) + (status?.bytesDown ?: 0)),
-            errors = errors.toString(),
-            errorNote = snapshot.events.firstOrNull { it.profileId == profile.id && it.kind == AgentEvent.Kind.Error }?.detail,
-            errorAt = snapshot.events.firstOrNull { it.profileId == profile.id && it.kind == AgentEvent.Kind.Error }?.let(::time),
+            errors = if (hasCurrentConnectionProblem) "1" else "0",
+            errorNote = if (hasCurrentConnectionProblem) status?.detail else null,
+            errorAt = if (hasCurrentConnectionProblem) status?.let { time(it.lastChangedAt) } else null,
             certificatePin = profile.certificatePin,
         )
     }
