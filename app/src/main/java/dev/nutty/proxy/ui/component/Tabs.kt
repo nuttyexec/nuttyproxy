@@ -74,7 +74,6 @@ fun BottomTabs(
                 SettingsGlyph(it)
             }
         }
-        HomeIndicator()
     }
 }
 

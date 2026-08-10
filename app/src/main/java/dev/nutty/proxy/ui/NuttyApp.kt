@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -21,7 +24,6 @@ import dev.nutty.proxy.ProxyViewModel
 import dev.nutty.proxy.ReleaseUpdate
 import androidx.compose.ui.Modifier
 import dev.nutty.proxy.ui.component.BottomTabs
-import dev.nutty.proxy.ui.component.HomeIndicator
 import dev.nutty.proxy.ui.component.SheetHost
 import dev.nutty.proxy.ui.model.HomeState
 import dev.nutty.proxy.ui.model.Screen
@@ -93,6 +95,9 @@ fun NuttyApp(
     Column(
         modifier = modifier
             .fillMaxSize()
+            // Android 15 enforces edge-to-edge for target SDK 35. Reserve the
+            // real status and navigation bars instead of drawing mock bars.
+            .windowInsetsPadding(WindowInsets.systemBars)
             .background(NuttyColor.Bg)
     ) {
         Box(modifier = Modifier.weight(1f)) {
@@ -219,11 +224,6 @@ fun NuttyApp(
             )
         }
 
-        when {
-            screen.isTabbed -> BottomTabs(current = screen, onSelect = go)
-            // The shade mock owns its whole frame; everything else still reserves
-            // the gesture inset so buttons never sit under the system pill.
-            screen != Screen.NotificationShade -> HomeIndicator()
-        }
+        if (screen.isTabbed) BottomTabs(current = screen, onSelect = go)
     }
 }
