@@ -397,7 +397,6 @@ function commandInstallQr(options) {
   qrTerminal.generate(parsed.toString(), { small: true }, (qr) => process.stdout.write(qr));
   console.error(`APK download QR: ${parsed}`);
 }
-function systemdValue(value) { return `"${String(value).replace(/[\\"]/g, "\\$&")}"`; }
 function commandService(options) {
   if (options.help || !options._[1]) return console.log("service install");
   if (options._[1] !== "install") throw new Error("unknown service command");
@@ -411,7 +410,8 @@ function commandService(options) {
   const { file } = loadConfig(options);
   const stateDir = path.dirname(file);
   const entrypoint = fs.realpathSync(process.argv[1]);
-  const unit = `[Unit]\nDescription=Nutty Proxy gateway\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${systemdValue(path.dirname(entrypoint))}\nEnvironment=NUTTYPROXY_STATE_DIR=${systemdValue(stateDir)}\nExecStart=${systemdValue(process.execPath)} ${systemdValue(entrypoint)} serve\nRestart=on-failure\nRestartSec=3s\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n`;
+  if ([process.execPath, entrypoint, stateDir].some((value) => /\s/.test(value))) throw new Error("service paths cannot contain whitespace");
+  const unit = `[Unit]\nDescription=Nutty Proxy gateway\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${path.dirname(entrypoint)}\nEnvironment=NUTTYPROXY_STATE_DIR=${stateDir}\nExecStart=${process.execPath} ${entrypoint} serve\nRestart=on-failure\nRestartSec=3s\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n`;
   fs.writeFileSync("/etc/systemd/system/nuttyproxy.service", unit, { mode: 0o644 });
   for (const args of [["daemon-reload"], ["enable", "--now", "nuttyproxy.service"]]) {
     const result = childProcess.spawnSync("systemctl", args, { stdio: "inherit" });
