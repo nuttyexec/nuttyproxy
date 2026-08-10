@@ -267,7 +267,10 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
                     val assets = release.getJSONArray("assets")
                     val downloadUrl = (0 until assets.length())
                         .map { assets.getJSONObject(it) }
-                        .firstOrNull { it.optString("name") == "Nutty-Proxy.apk" }
+                        // GitHub keeps the uploaded filename (`app-release.apk`)
+                        // even when a release command supplies a display label.
+                        // Accept both names so older releases stay discoverable.
+                        .firstOrNull { it.optString("name") in setOf("app-release.apk", "Nutty-Proxy.apk") }
                         ?.getString("browser_download_url")
                         ?: error("Release APK is missing")
                     version to downloadUrl
