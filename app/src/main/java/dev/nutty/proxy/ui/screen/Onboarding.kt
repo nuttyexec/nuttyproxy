@@ -422,7 +422,7 @@ fun ReadyScreen(
             modifier = Modifier.padding(bottom = 10.dp),
         )
         Text(
-            text = "Four grants and the agent survives reboots.",
+            text = "Three grants. Restart after boot is built in.",
             style = NuttyType.Body,
             color = NuttyColor.TextDim,
             modifier = Modifier.padding(bottom = 26.dp),
@@ -467,8 +467,8 @@ fun ReadyScreen(
                         modifier = Modifier.weight(1f),
                     )
                     when {
-                        item.action == "DONE" -> Text(
-                            text = "DONE",
+                        item.state == ReadinessState.Done -> Text(
+                            text = "READY",
                             style = NuttyType.ValueSmall,
                             color = NuttyColor.TextFaint,
                         )
@@ -478,13 +478,13 @@ fun ReadyScreen(
                             "Background data" -> onData
                             else -> onAppSettings
                         })
-                        else -> GhostPillButton(
+                        item.action != null -> GhostPillButton(
                             text = item.action.orEmpty(),
                             onClick = when (item.label) {
                                 "Notifications" -> onNotifications
                                 "Battery unrestricted" -> onBattery
                                 "Background data" -> onData
-                                else -> onAppSettings
+                                else -> ({})
                             },
                             textColor = NuttyColor.TextPrimary,
                             strong = true,

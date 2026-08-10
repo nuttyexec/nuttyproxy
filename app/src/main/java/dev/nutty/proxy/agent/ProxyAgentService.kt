@@ -204,23 +204,34 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
     }
 
     private fun showForeground(phase: ConnectionPhase, detail: String) {
-        val snapshot = AgentRuntimeState.snapshot.value
-        val notificationState = when (phase) {
-            ConnectionPhase.Connected -> ProxyNotifications.State.Connected
-            ConnectionPhase.Attention, ConnectionPhase.Disconnected -> ProxyNotifications.State.Attention
-            ConnectionPhase.Paused -> ProxyNotifications.State.Paused
-            ConnectionPhase.Connecting, ConnectionPhase.Reconnecting -> ProxyNotifications.State.Reconnecting
-        }
-        val notification = ProxyNotifications.build(
-            context = this,
-            state = notificationState,
-            connections = snapshot.activeStreams,
-            detail = detail,
-        )
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(ProxyNotifications.NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(ProxyNotifications.NOTIFICATION_ID, notification)
+        try {
+            val snapshot = AgentRuntimeState.snapshot.value
+            val notificationState = when (phase) {
+                ConnectionPhase.Connected -> ProxyNotifications.State.Connected
+                ConnectionPhase.Attention, ConnectionPhase.Disconnected -> ProxyNotifications.State.Attention
+                ConnectionPhase.Paused -> ProxyNotifications.State.Paused
+                ConnectionPhase.Connecting, ConnectionPhase.Reconnecting -> ProxyNotifications.State.Reconnecting
+            }
+            val notification = ProxyNotifications.build(
+                context = this,
+                state = notificationState,
+                connections = snapshot.activeStreams,
+                detail = detail,
+            )
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(ProxyNotifications.NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(ProxyNotifications.NOTIFICATION_ID, notification)
+            }
+        } catch (error: RuntimeException) {
+            // A device-specific foreground-service policy must never take down
+            // the onboarding activity. Keep the reason in the local log and
+            // stop this service cleanly instead of crashing the process.
+            AgentRuntimeState.record(
+                this,
+                AgentEvent(System.currentTimeMillis(), kind = AgentEvent.Kind.Error, detail = "Could not start persistent proxy · ${error.javaClass.simpleName}"),
+            )
+            stopSelf()
         }
     }
 

@@ -50,28 +50,31 @@ class AgentConnection(
     private val identityScope = "${profile.gatewayUrl}\n${profile.agentId}"
 
     fun connect() {
-        stopped = false
-        disconnectedReported.set(false)
-        heartbeat?.cancel(false)
-        socket?.cancel()
-        listener.onStatus(profile, ConnectionPhase.Connecting, "Opening secure tunnel")
-        val host = profile.gatewayUrl.toHttpUrl().host
-        client = OkHttpClient.Builder()
-            .pingInterval(45, TimeUnit.SECONDS)
-            .certificatePinner(CertificatePinner.Builder().add(host, profile.certificatePin).build())
-            .build()
-        socket = client!!.newWebSocket(Request.Builder().url(profile.gatewayUrl).build(), object : WebSocketListener() {
+        runCatching {
+            stopped = false
+            disconnectedReported.set(false)
+            heartbeat?.cancel(false)
+            socket?.cancel()
+            listener.onStatus(profile, ConnectionPhase.Connecting, "Opening secure tunnel")
+            val host = profile.gatewayUrl.toHttpUrl().host
+            client = OkHttpClient.Builder()
+                .pingInterval(45, TimeUnit.SECONDS)
+                .certificatePinner(CertificatePinner.Builder().add(host, profile.certificatePin).build())
+                .build()
+            socket = client!!.newWebSocket(Request.Builder().url(profile.gatewayUrl).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val hello = JSONObject()
-                    .put("type", "hello")
-                    .put("version", 1)
-                    .put("agentId", profile.agentId)
-                    .put("deviceName", deviceName)
-                if (!enrolled) {
-                    hello.put("enrollmentToken", pairingToken)
-                    hello.put("publicKeyJwk", JSONObject(identity.publicJwk(identityScope).value))
-                }
-                webSocket.send(hello.toString())
+                runCatching {
+                    val hello = JSONObject()
+                        .put("type", "hello")
+                        .put("version", 1)
+                        .put("agentId", profile.agentId)
+                        .put("deviceName", deviceName)
+                    if (!enrolled) {
+                        hello.put("enrollmentToken", pairingToken)
+                        hello.put("publicKeyJwk", JSONObject(identity.publicJwk(identityScope).value))
+                    }
+                    webSocket.send(hello.toString())
+                }.onFailure { closeWithError("Could not create device identity") }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -80,7 +83,8 @@ class AgentConnection(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                handleFrame(bytes.toByteArray())
+                runCatching { handleFrame(bytes.toByteArray()) }
+                    .onFailure { closeWithError("Invalid gateway frame") }
             }
 
             override fun onFailure(webSocket: WebSocket, throwable: Throwable, response: Response?) {
@@ -90,7 +94,11 @@ class AgentConnection(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 reportDisconnected(if (reason.isBlank()) "Connection closed ($code)" else reason)
             }
-        })
+            })
+        }.onFailure { error ->
+            listener.onStatus(profile, ConnectionPhase.Attention, "Could not open secure tunnel")
+            reportDisconnected(error.message ?: "Tunnel setup error")
+        }
     }
 
     fun stop() {

@@ -284,11 +284,11 @@ private data class Quad(
 
 /** A readiness row in Settings — marker, label, chevron. */
 @Composable
-fun ReadinessRow(item: ReadinessItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun ReadinessRow(item: ReadinessItem, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp),
@@ -301,6 +301,6 @@ fun ReadinessRow(item: ReadinessItem, modifier: Modifier = Modifier, onClick: ()
             else NuttyColor.TextSecondary,
             modifier = Modifier.weight(1f),
         )
-        Chevron()
+        if (onClick != null) Chevron()
     }
 }

@@ -96,12 +96,21 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-    fun readiness(context: Context = app): List<ReadinessItem> = listOf(
-        ReadinessItem("Notifications", if (AlwaysOnSetup.notificationsAllowed(context)) ReadinessState.Done else ReadinessState.Warning, "Allow"),
-        ReadinessItem("Battery unrestricted", if (AlwaysOnSetup.batteryUnrestricted(context)) ReadinessState.Done else ReadinessState.Warning, "Allow"),
-        ReadinessItem("Background data", if (AlwaysOnSetup.backgroundDataRestricted(context)) ReadinessState.Warning else ReadinessState.Done, "Open"),
-        ReadinessItem("Auto-start after boot", if (AgentStore(context).bootObserved()) ReadinessState.Done else ReadinessState.Pending, "Open", "4"),
-    )
+    fun readiness(context: Context = app): List<ReadinessItem> {
+        val notifications = AlwaysOnSetup.notificationsAllowed(context)
+        val battery = AlwaysOnSetup.batteryUnrestricted(context)
+        val backgroundData = AlwaysOnSetup.backgroundDataRestricted(context)
+        return listOf(
+            ReadinessItem("Notifications", if (notifications) ReadinessState.Done else ReadinessState.Warning, if (notifications) null else "Allow"),
+            ReadinessItem("Battery unrestricted", if (battery) ReadinessState.Done else ReadinessState.Warning, if (battery) null else "Allow"),
+            ReadinessItem("Background data", if (backgroundData) ReadinessState.Warning else ReadinessState.Done, if (backgroundData) "Open" else null),
+            // Android delivers BOOT_COMPLETED without a user-facing setting on
+            // stock devices. OEM launch managers cannot be read or enabled by
+            // a normal app, so sending users to the generic app-info page is
+            // misleading and does not improve boot behaviour.
+            ReadinessItem("Restart after boot", ReadinessState.Done),
+        )
+    }
 
     fun traffic(snapshot: AgentSnapshot): String = formatBytes(snapshot.bytesUp + snapshot.bytesDown)
 

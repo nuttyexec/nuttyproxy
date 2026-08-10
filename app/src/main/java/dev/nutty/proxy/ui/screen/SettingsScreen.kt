@@ -92,7 +92,7 @@ fun SettingsScreen(
                         "Notifications" -> onNotifications
                         "Battery unrestricted" -> onBattery
                         "Background data" -> onData
-                        else -> onAppSettings
+                        else -> null
                     })
                 }
             }

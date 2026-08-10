@@ -5,12 +5,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import android.app.Activity
 import dev.nutty.proxy.ProxyViewModel
@@ -59,11 +63,22 @@ fun NuttyApp(
     val model: ProxyViewModel = viewModel ?: composeViewModel()
     val snapshot by model.snapshot.collectAsState()
     val activity = LocalContext.current as? Activity
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Permission dialogs and Android Settings mutate state outside Compose.
+    // Re-read the checklist whenever the user returns to this activity.
+    var readinessRevision by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) readinessRevision += 1
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val resolvedDeviceName = snapshot.deviceName.ifBlank { deviceName }
     val servers = model.servers(snapshot)
     val logs = model.logs(snapshot)
     val requests = model.requests(snapshot)
-    val readiness = model.readiness()
+    val readiness = remember(readinessRevision) { model.readiness() }
     var screen by remember { mutableStateOf(if (snapshot.profiles.isEmpty()) Screen.Pair else initialScreen) }
     var sheet by remember { mutableStateOf<SheetKey?>(null) }
     var pendingPairing by remember { mutableStateOf<String?>(null) }
