@@ -25,6 +25,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** CameraX + ML Kit scanner. Pairing payloads are parsed by the screen, never trusted here. */
 @Composable
@@ -51,12 +52,20 @@ fun QrScanner(
 
     val executor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember { BarcodeScanning.getClient() }
+    val active = remember { AtomicBoolean(true) }
+    val delivered = remember { AtomicBoolean(false) }
     var provider: ProcessCameraProvider? by remember { mutableStateOf(null) }
+    var analysis: ImageAnalysis? by remember { mutableStateOf(null) }
     DisposableEffect(Unit) {
         onDispose {
+            // Navigation happens as soon as a QR is recognized. CameraX can
+            // still have one image queued at that point, so stop analysis
+            // before closing ML Kit and ignore every late callback.
+            active.set(false)
+            analysis?.clearAnalyzer()
             provider?.unbindAll()
             scanner.close()
-            executor.shutdown()
+            executor.shutdownNow()
         }
     }
     AndroidView(
@@ -64,27 +73,36 @@ fun QrScanner(
         factory = { viewContext ->
             PreviewView(viewContext).also { previewView ->
                 ProcessCameraProvider.getInstance(viewContext).addListener({
+                    if (!active.get()) return@addListener
                     val cameraProvider = ProcessCameraProvider.getInstance(viewContext).get()
                     provider = cameraProvider
                     val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                    val analysis = ImageAnalysis.Builder()
+                    val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
-                    analysis.setAnalyzer(executor) { imageProxy ->
+                    analysis = imageAnalysis
+                    imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                        if (!active.get()) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
                         val image = imageProxy.image
                         if (image == null) {
                             imageProxy.close()
                             return@setAnalyzer
                         }
-                        scanner.process(InputImage.fromMediaImage(image, imageProxy.imageInfo.rotationDegrees))
-                            .addOnSuccessListener { codes ->
-                                codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue?.let(onPayload)
-                            }
-                            .addOnCompleteListener { imageProxy.close() }
+                        runCatching {
+                            scanner.process(InputImage.fromMediaImage(image, imageProxy.imageInfo.rotationDegrees))
+                                .addOnSuccessListener { codes ->
+                                    val payload = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
+                                    if (payload != null && active.get() && delivered.compareAndSet(false, true)) onPayload(payload)
+                                }
+                                .addOnCompleteListener { imageProxy.close() }
+                        }.onFailure { imageProxy.close() }
                     }
                     runCatching {
                         cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                        if (active.get()) cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis)
                     }.onFailure { onUnavailable() }
                 }, ContextCompat.getMainExecutor(viewContext))
             }

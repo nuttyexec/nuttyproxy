@@ -21,6 +21,7 @@ tar -xzf /tmp/nutty-proxy-agent.tgz --strip-components=1 -C "$install_dir"
 cd "$install_dir"
 npm ci --omit=dev
 node bin/phone-proxy-agent.mjs --help
+sudo ln -sf "$install_dir/bin/phone-proxy-agent.mjs" /usr/local/bin/nuttyproxy
 ```
 
 Replace `<owner>/<repo>` with this repository's public GitHub path before
@@ -31,10 +32,10 @@ operator/protocol documentation.
 ## Configure
 
 ```bash
-node bin/phone-proxy-agent.mjs init \
+nuttyproxy init \
   --public-url wss://proxy.example.com/phone-agent/v1 \
   --certificate-pin 'sha256/<SPKI-base64-pin>'
-node bin/phone-proxy-agent.mjs serve
+nuttyproxy serve
 ```
 
 `serve` binds to `127.0.0.1:41082` by default. Terminate TLS at your normal
@@ -69,19 +70,19 @@ openssl s_client -connect proxy.example.com:443 -servername proxy.example.com </
 
 Prefix the result with `sha256/`.
 
-For a persistent deployment, run `phone-proxy-agent serve` under your normal
+For a persistent deployment, run `nuttyproxy serve` under your normal
 service supervisor with a dedicated unprivileged user and a state directory
 such as `/var/lib/phone-proxy-agent` (mode `0700`), not in a source checkout.
 
 ## Pair a phone
 
 ```bash
-phone-proxy-agent pair --agent-id p1 --name P1 --listen-port 42080 --qr
+nuttyproxy pair --agent-id p1 --name P1 --listen-port 42080
 ```
 
-`--qr` renders a scannable terminal QR. `--qr-file /secure/path/p1.png` writes
-a `0600` PNG while keeping the JSON on stdout; use it only in a private operator
-workflow and remove it after pairing. The generated JSON is a short-lived,
+`pair` renders a scannable terminal QR by default. Add `--json` when automation
+needs JSON only; `--qr-file /secure/path/p1.png` writes a `0600` PNG. Use it
+only in a private operator workflow and remove it after pairing. The generated JSON is a short-lived,
 single-use pairing secret. Do not commit it, embed it in a public blog image, or
 use it as the APK download QR. Scan it in the Android app, then use your
 service normally through its assigned loopback proxy:
@@ -93,10 +94,10 @@ curl --proxy http://127.0.0.1:42080 https://ifconfig.me
 ## Manage access
 
 ```bash
-phone-proxy-agent agents list
-phone-proxy-agent agents disable --agent-id p1
-phone-proxy-agent agents enable --agent-id p1
-phone-proxy-agent agents revoke --agent-id p1
+nuttyproxy agents list
+nuttyproxy agents disable --agent-id p1
+nuttyproxy agents enable --agent-id p1
+nuttyproxy agents revoke --agent-id p1
 ```
 
 Disabling or revoking access immediately closes the active tunnel and its
@@ -122,6 +123,8 @@ reference when adding another server implementation or a non-Android client.
 
 ## Development checkout
 
-For local development only, run `npm install` inside `cli/` and invoke
-`node bin/phone-proxy-agent.mjs`. Production servers should use a pinned GitHub
-Release tarball rather than a mutable checkout or global npm install.
+`nuttyproxy installqr` prints the matching GitHub Release APK QR. Pass `--url`
+to render a different HTTPS APK URL. For local development only, run `npm install`
+inside `cli/` and invoke `node bin/phone-proxy-agent.mjs`. Production servers
+should use a pinned GitHub Release tarball rather than a mutable checkout or
+global npm install.

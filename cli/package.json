@@ -1,6 +1,6 @@
 {
   "name": "@nutty-proxy/phone-proxy-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "files": [
     "bin",
@@ -9,7 +9,7 @@
     "npm-shrinkwrap.json"
   ],
   "bin": {
-    "phone-proxy-agent": "bin/phone-proxy-agent.mjs"
+    "nuttyproxy": "bin/phone-proxy-agent.mjs"
   },
   "engines": {
     "node": ">=20"

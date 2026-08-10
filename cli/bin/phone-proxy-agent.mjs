@@ -25,18 +25,21 @@ const MAX_WS_BUFFERED = 2 * 1024 * 1024;
 const ENROLLMENT_RESERVATION_TIMEOUT = 60_000;
 const FRAME_TO_PHONE = 1;
 const FRAME_TO_GATEWAY = 2;
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+const DEFAULT_INSTALL_URL = `https://github.com/nuttyexec/nuttyproxy/releases/download/v${PACKAGE_VERSION}/app-release.apk`;
 
 function fail(message) { console.error(`phone-proxy-agent: ${message}`); process.exitCode = 1; }
 function usage() {
   console.log(`
-phone-proxy-agent <command>
+nuttyproxy <command>
 
   init      create a server configuration
   serve     run the local WSS gateway and loopback proxy listeners
-  pair      create a one-time Android pairing payload
+  pair      create and print a one-time Android pairing QR
+  installqr print the Nutty Proxy APK download QR
   agents    list, disable, enable, or revoke enrolled phones
 
-Run 'phone-proxy-agent <command> --help' for command options.`);
+Run 'nuttyproxy <command> --help' for command options.`);
 }
 function args(argv) {
   const values = { _: [] };
@@ -304,7 +307,7 @@ function commandInit(options) {
   writeJson(file, config); console.log(`Wrote ${file}`);
 }
 async function commandPair(options) {
-  if (options.help) return console.log("pair --agent-id p1 --name P1 --listen-port 42080 [--qr] [--qr-file p1.png] [--listen-host 127.0.0.1 --expires-minutes 10 --config FILE]");
+  if (options.help) return console.log("pair --agent-id p1 --name P1 --listen-port 42080 [--json] [--qr-file p1.png] [--listen-host 127.0.0.1 --expires-minutes 10 --config FILE]");
   const { file, config } = loadConfig(options); const agentId = options["agent-id"]; const serverName = options.name || agentId; const port = Number(options["listen-port"]); const minutes = Number(options["expires-minutes"] || 10);
   const listenHost = options["listen-host"] || "127.0.0.1";
   if (!agentId?.match(/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/) || !isLoopback(listenHost) || !Number.isInteger(port) || port < 1024 || port > 65535 || !Number.isFinite(minutes) || minutes < 1 || minutes > 60) throw new Error("invalid agent id, loopback host, port, or expiry");
@@ -322,15 +325,25 @@ async function commandPair(options) {
     fs.chmodSync(output, 0o600);
     console.error(`Pairing QR written to ${output}; it expires at ${payload.expiresAt}`);
   }
-  if (options.qr) {
-    // QR goes to stdout for direct terminal scanning. `--json` additionally
-    // prints the machine-readable payload on stderr for a controlled handoff.
+  if (options.qr || !options.json) {
+    // QR goes to stdout by default for direct terminal scanning. `--json`
+    // additionally prints the machine-readable payload on stderr for a
+    // controlled handoff; use --json alone for JSON-only automation.
     qrTerminal.generate(serialized, { small: true }, (qr) => process.stdout.write(qr));
     console.error(`Pairing QR for ${agentId}; it expires at ${payload.expiresAt}`);
     if (options.json) console.error(JSON.stringify(payload, null, 2));
   } else {
     console.log(JSON.stringify(payload, null, 2));
   }
+}
+function commandInstallQr(options) {
+  if (options.help) return console.log("installqr [--url https://example.com/app-release.apk]");
+  const url = options.url || DEFAULT_INSTALL_URL;
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error("--url must be an absolute https:// URL"); }
+  if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) throw new Error("--url must be an absolute https:// URL");
+  qrTerminal.generate(parsed.toString(), { small: true }, (qr) => process.stdout.write(qr));
+  console.error(`APK download QR: ${parsed}`);
 }
 function commandAgents(options) {
   if (options.help) return console.log("agents list | agents disable --agent-id p1 | agents enable --agent-id p1 | agents revoke --agent-id p1");
@@ -343,10 +356,11 @@ function commandAgents(options) {
 
 try {
   const options = args(process.argv.slice(2)); const command = options._[0];
-  if (!command || options.help && !["init", "serve", "pair", "agents"].includes(command)) usage();
+  if (!command || options.help && !["init", "serve", "pair", "installqr", "agents"].includes(command)) usage();
   else if (command === "init") commandInit(options);
   else if (command === "serve") { if (options.help) console.log("serve [--config FILE]"); else { const { file, config } = loadConfig(options); runGateway(file, config); } }
   else if (command === "pair") await commandPair(options);
+  else if (command === "installqr") commandInstallQr(options);
   else if (command === "agents") commandAgents(options);
   else usage();
 } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
