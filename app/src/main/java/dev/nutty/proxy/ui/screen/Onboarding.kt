@@ -474,7 +474,7 @@ fun ReadyScreen(
                         )
                         warning -> AccentPillButton(item.action.orEmpty(), onClick = when (item.label) {
                             "Notifications" -> onNotifications
-                            "Battery unrestricted" -> onBattery
+                            "Battery background access" -> onBattery
                             "Background data" -> onData
                             else -> onAppSettings
                         })
@@ -482,7 +482,7 @@ fun ReadyScreen(
                             text = item.action.orEmpty(),
                             onClick = when (item.label) {
                                 "Notifications" -> onNotifications
-                                "Battery unrestricted" -> onBattery
+                                "Battery background access" -> onBattery
                                 "Background data" -> onData
                                 else -> ({})
                             },

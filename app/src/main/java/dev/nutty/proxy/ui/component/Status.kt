@@ -20,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.HomeState
 import dev.nutty.proxy.ui.theme.Dim
 import dev.nutty.proxy.ui.theme.NuttyColor
@@ -38,6 +38,7 @@ import dev.nutty.proxy.ui.theme.NuttyType
 @Composable
 fun StatusPill(
     state: HomeState,
+    meta: String? = null,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
@@ -61,72 +62,14 @@ fun StatusPill(
         )
         Text(state.title, style = NuttyType.StatusTitle, color = status.title)
         Text(
-            text = state.meta,
+            text = meta ?: state.meta,
             style = NuttyType.Value,
             color = status.meta,
             textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-    }
-}
-
-/**
- * The single-line explanation under the pill. One issue, one sentence, one action
- * — the design never stacks two of these.
- */
-@Composable
-fun InlineNotice(
-    notice: DemoData.Notice,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onAction: () -> Unit,
-) {
-    val background = when (notice.tone) {
-        DemoData.Notice.Tone.Neutral -> NuttyColor.Surface
-        DemoData.Notice.Tone.Amber -> NuttyColor.AmberContainerSoft
-        DemoData.Notice.Tone.Red -> NuttyColor.RedContainerSoft
-    }
-    val border = when (notice.tone) {
-        DemoData.Notice.Tone.Neutral -> NuttyColor.Outline
-        DemoData.Notice.Tone.Amber -> NuttyColor.AmberOutlineSoft
-        DemoData.Notice.Tone.Red -> NuttyColor.RedOutlineSoft
-    }
-    val textColor = when (notice.tone) {
-        DemoData.Notice.Tone.Neutral -> NuttyColor.TextTertiary
-        DemoData.Notice.Tone.Amber -> NuttyColor.AmberText
-        DemoData.Notice.Tone.Red -> NuttyColor.RedTextSoft
-    }
-    // Only the amber notice carries a real button; the others offer a quiet
-    // "why?" because there is nothing to fix, only something to understand.
-    val hasButton = notice.tone == DemoData.Notice.Tone.Amber
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(NuttyShape.Notice)
-            .background(background, NuttyShape.Notice)
-            .border(1.dp, border, NuttyShape.Notice)
-            .clickable(onClick = onClick)
-            .padding(
-                start = 14.dp,
-                end = if (hasButton) 10.dp else 14.dp,
-                top = if (hasButton) 10.dp else 11.dp,
-                bottom = if (hasButton) 10.dp else 11.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            text = notice.text,
-            style = NuttyType.Item,
-            color = textColor,
-            modifier = Modifier.weight(1f),
-        )
-        if (hasButton) {
-            AccentPillButton(notice.action, onAction)
-        } else {
-            Text(notice.action, style = NuttyType.ValueSmall, color = NuttyColor.TextDim)
-        }
     }
 }
 
@@ -182,6 +125,8 @@ fun MetricGrid(
     activeStreams: Int,
     traffic: String,
     tunnelCaption: String,
+    networkValue: String,
+    networkCaption: String,
     modifier: Modifier = Modifier,
     onTunnel: () -> Unit,
     onNetwork: () -> Unit,
@@ -192,16 +137,17 @@ fun MetricGrid(
         Row(horizontalArrangement = Arrangement.spacedBy(Dim.TileGap)) {
             MetricTile(
                 label = "TUNNEL",
-                value = DemoData.tunnelLatency(state),
-                unit = "ms",
+                // The protocol does not measure RTT, so never invent a number.
+                value = null,
+                unit = null,
                 caption = tunnelCaption,
                 modifier = Modifier.weight(1f),
                 onClick = onTunnel,
             )
             MetricTile(
                 label = "NETWORK",
-                value = DemoData.NETWORK,
-                caption = "SKT · battery 84%",
+                value = networkValue,
+                caption = networkCaption,
                 modifier = Modifier.weight(1f),
                 onClick = onNetwork,
             )
@@ -217,49 +163,12 @@ fun MetricGrid(
             )
             MetricTile(
                 label = "TODAY",
-                value = if (state.isLive) traffic else null,
+                value = if (state == HomeState.Connected) traffic else null,
                 unit = null,
                 caption = "current app session",
                 modifier = Modifier.weight(1f),
                 onClick = onUsage,
             )
-        }
-    }
-}
-
-/**
- * Simulated status bar, so a rendered frame lines up with the design canvas.
- * Replace with real insets when the app goes edge-to-edge.
- */
-@Composable
-fun FakeStatusBar(network: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(Dim.StatusBarHeight)
-            .padding(horizontal = 24.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(DemoData.CLOCK, style = NuttyType.StatusClock, color = NuttyColor.TextPrimary)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            Text(network, style = NuttyType.MetaStrong, color = NuttyColor.TextMuted)
-            Box(
-                modifier = Modifier
-                    .size(width = 22.dp, height = 11.dp)
-                    .border(1.dp, NuttyColor.TextMuted, RoundedCornerShape(3.dp))
-                    .padding(1.5.dp),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(0.72f)
-                        .fillMaxHeight()
-                        .background(NuttyColor.TextMuted, RoundedCornerShape(1.dp))
-                )
-            }
         }
     }
 }

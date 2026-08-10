@@ -10,8 +10,10 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
+import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.UnknownHostException
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -19,6 +21,8 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /** One encrypted, certificate-pinned tunnel for one enrolled server. */
 class AgentConnection(
@@ -88,7 +92,7 @@ class AgentConnection(
             }
 
             override fun onFailure(webSocket: WebSocket, throwable: Throwable, response: Response?) {
-                reportDisconnected(throwable.message ?: "Network error")
+                reportDisconnected(failureDetail(throwable))
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -96,8 +100,9 @@ class AgentConnection(
             }
             })
         }.onFailure { error ->
-            listener.onStatus(profile, ConnectionPhase.Attention, "Could not open secure tunnel")
-            reportDisconnected(error.message ?: "Tunnel setup error")
+            val detail = failureDetail(error)
+            listener.onStatus(profile, ConnectionPhase.Attention, detail)
+            reportDisconnected(detail)
         }
     }
 
@@ -215,6 +220,19 @@ class AgentConnection(
     private fun closeWithError(detail: String) {
         socket?.close(1008, detail)
         reportDisconnected(detail)
+    }
+
+    /** Keep diagnostics actionable without exposing pairing material or URLs. */
+    private fun failureDetail(error: Throwable): String = when (error) {
+        is SSLPeerUnverifiedException -> "Server certificate pin did not match"
+        is SSLHandshakeException -> "Could not verify the server certificate"
+        is UnknownHostException -> "Could not find the server address"
+        is ConnectException -> "Could not reach the server port"
+        else -> error.message
+            ?.replace(Regex("\\s+"), " ")
+            ?.take(120)
+            ?.ifBlank { null }
+            ?: "Secure tunnel connection failed"
     }
 
     private fun reportDisconnected(reason: String) {

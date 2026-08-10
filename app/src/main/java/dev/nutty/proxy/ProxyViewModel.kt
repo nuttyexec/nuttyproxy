@@ -3,6 +3,11 @@ package dev.nutty.proxy
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.compose.ui.graphics.Color
 import dev.nutty.proxy.agent.AgentEvent
@@ -20,11 +25,15 @@ import dev.nutty.proxy.ui.model.RequestInfo
 import dev.nutty.proxy.ui.model.ServerInfo
 import dev.nutty.proxy.ui.model.ServerState
 import dev.nutty.proxy.ui.model.SheetKey
+import dev.nutty.proxy.ui.model.SheetRow
+import dev.nutty.proxy.ui.model.SheetSpec
 import dev.nutty.proxy.ui.theme.NuttyColor
 import kotlinx.coroutines.flow.StateFlow
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+
+data class NetworkSummary(val label: String, val caption: String)
 
 class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
@@ -55,6 +64,7 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
     fun pauseServer(profileId: String) = ProxyAgentService.profileCommand(app, ProxyAgentService.ACTION_PAUSE_PROFILE, profileId)
     fun resumeServer(profileId: String) = ProxyAgentService.profileCommand(app, ProxyAgentService.ACTION_RESUME_PROFILE, profileId)
     fun revokeServer(profileId: String) = ProxyAgentService.profileCommand(app, ProxyAgentService.ACTION_REVOKE_PROFILE, profileId)
+    fun removeAllPairings() = ProxyAgentService.command(app, ProxyAgentService.ACTION_REMOVE_ALL)
 
     fun servers(snapshot: AgentSnapshot): List<ServerInfo> = snapshot.profiles.map { profile ->
         val status = snapshot.statuses[profile.id]
@@ -74,12 +84,17 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
             errors = errors.toString(),
             errorNote = snapshot.events.firstOrNull { it.profileId == profile.id && it.kind == AgentEvent.Kind.Error }?.detail,
             errorAt = snapshot.events.firstOrNull { it.profileId == profile.id && it.kind == AgentEvent.Kind.Error }?.let(::time),
+            certificatePin = profile.certificatePin,
         )
     }
 
     fun logs(snapshot: AgentSnapshot): List<LogEntry> = snapshot.events.map { event ->
         LogEntry(colorFor(event.kind), event.detail, time(event))
     }
+
+    fun logsForServer(snapshot: AgentSnapshot, profileId: String): List<LogEntry> = snapshot.events
+        .filter { it.profileId == profileId }
+        .map { event -> LogEntry(colorFor(event.kind), event.detail, time(event)) }
 
     fun requests(snapshot: AgentSnapshot): List<RequestInfo> = snapshot.events
         .filter { it.kind == AgentEvent.Kind.Request }
@@ -98,11 +113,11 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun readiness(context: Context = app): List<ReadinessItem> {
         val notifications = AlwaysOnSetup.notificationsAllowed(context)
-        val battery = AlwaysOnSetup.batteryUnrestricted(context)
+        val batteryRestricted = AlwaysOnSetup.backgroundBatteryRestricted(context)
         val backgroundData = AlwaysOnSetup.backgroundDataRestricted(context)
         return listOf(
             ReadinessItem("Notifications", if (notifications) ReadinessState.Done else ReadinessState.Warning, if (notifications) null else "Allow"),
-            ReadinessItem("Battery unrestricted", if (battery) ReadinessState.Done else ReadinessState.Warning, if (battery) null else "Allow"),
+            ReadinessItem("Battery background access", if (batteryRestricted) ReadinessState.Warning else ReadinessState.Done, if (batteryRestricted) "Open" else null),
             ReadinessItem("Background data", if (backgroundData) ReadinessState.Warning else ReadinessState.Done, if (backgroundData) "Open" else null),
             // Android delivers BOOT_COMPLETED without a user-facing setting on
             // stock devices. OEM launch managers cannot be read or enabled by
@@ -114,10 +129,121 @@ class ProxyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun traffic(snapshot: AgentSnapshot): String = formatBytes(snapshot.bytesUp + snapshot.bytesDown)
 
+    fun networkSummary(context: Context = app): NetworkSummary {
+        val capabilities = context.getSystemService(ConnectivityManager::class.java)
+            .getNetworkCapabilities(context.getSystemService(ConnectivityManager::class.java).activeNetwork)
+            ?: return NetworkSummary("Offline", "No active network")
+        val label = when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            else -> "Online"
+        }
+        return NetworkSummary(label, if (AlwaysOnSetup.backgroundDataRestricted(context)) "Background data restricted" else "Background data allowed")
+    }
+
+    fun sheet(snapshot: AgentSnapshot, key: SheetKey, selectedProfileId: String? = null): SheetSpec {
+        val selected = snapshot.profiles.firstOrNull { it.id == selectedProfileId }
+        val status = selected?.let { snapshot.statuses[it.id] }
+            ?: snapshot.statuses.values.firstOrNull()
+        val connectionRows = listOfNotNull(
+            SheetRow("State", snapshot.primaryPhase.name.lowercase()),
+            status?.let { SheetRow("Detail", it.detail.ifBlank { "—" }) },
+            SheetRow("Paired servers", snapshot.profiles.size.toString()),
+            SheetRow("Active streams", snapshot.activeStreams.toString()),
+        )
+        return when (key) {
+            SheetKey.Status, SheetKey.Attention, SheetKey.Disconnected -> SheetSpec(
+                title = "Connection",
+                rows = connectionRows,
+                note = "The tunnel uses a certificate-pinned WSS connection. Open Activity for the local event log.",
+            )
+            SheetKey.Network -> {
+                val network = networkSummary()
+                SheetSpec("Network", listOf(
+                    SheetRow("Active network", network.label),
+                    SheetRow("Background data", network.caption),
+                ), note = "Network transport is managed by Android. The agent reconnects when a usable network returns.")
+            }
+            SheetKey.Servers -> SheetSpec(
+                "Paired servers",
+                snapshot.profiles.map { profile ->
+                    val state = snapshot.statuses[profile.id]?.detail ?: if (profile.enrollmentPending) "Pairing incomplete" else "Not connected"
+                    SheetRow(profile.serverName, state)
+                }.ifEmpty { listOf(SheetRow("Servers", "None paired")) },
+                note = "Each server is added by a one-time QR or pairing payload and has a separate phone key.",
+            )
+            SheetKey.Usage -> SheetSpec(
+                "Current app session",
+                listOf(
+                    SheetRow("Phone → server", formatBytes(snapshot.bytesUp)),
+                    SheetRow("Server → phone", formatBytes(snapshot.bytesDown)),
+                    SheetRow("Active streams", snapshot.activeStreams.toString()),
+                ),
+                note = "Usage resets when the Android proxy service restarts; no request bodies, headers, or URLs are stored.",
+            )
+            SheetKey.Certificate -> SheetSpec(
+                "Pinned server certificate",
+                listOf(
+                    SheetRow("Server", selected?.serverName ?: "—"),
+                    SheetRow("SPKI pin", selected?.certificatePin ?: "—"),
+                ),
+                note = "The app rejects a server certificate that does not match this pin.",
+            )
+            SheetKey.Pairing -> SheetSpec(
+                "Pairing",
+                listOf(
+                    SheetRow("Transport", "Certificate-pinned WSS"),
+                    SheetRow("Code", "One-time enrollment token"),
+                    SheetRow("Device key", "Generated in Android Keystore"),
+                ),
+                note = "Run `nuttyproxy pair` on the server, then scan its QR or paste its payload here.",
+            )
+            SheetKey.Naming -> SheetSpec(
+                "Server name",
+                listOf(SheetRow("Server", selected?.serverName ?: "—")),
+                note = "The server supplies this name during pairing. The phone name can be changed in Settings.",
+            )
+            SheetKey.Capture, SheetKey.Request1, SheetKey.Request2, SheetKey.Request3 -> SheetSpec(
+                "Activity privacy",
+                listOf(
+                    SheetRow("Recorded", "Method and destination host:port"),
+                    SheetRow("Not recorded", "Request URL, headers, cookies, body"),
+                    SheetRow("Retention", "Last 100 local events"),
+                ),
+                note = "Activity is a local operational log, not a traffic capture.",
+            )
+        }
+    }
+
     fun requestNotifications(activity: Activity) = AlwaysOnSetup.requestNotifications(activity)
     fun requestBatteryUnrestricted(activity: Activity) = AlwaysOnSetup.requestBatteryUnrestricted(activity)
     fun openDataSettings(activity: Activity) = AlwaysOnSetup.openDataSettings(activity)
     fun openAppSettings(activity: Activity) = AlwaysOnSetup.openAppSettings(activity)
+
+    fun copyErrorLog(context: Context, snapshot: AgentSnapshot) {
+        val text = diagnosticReport(snapshot)
+        context.getSystemService(ClipboardManager::class.java)
+            .setPrimaryClip(ClipData.newPlainText("Nutty Proxy diagnostic log", text))
+    }
+
+    fun shareReport(activity: Activity, snapshot: AgentSnapshot) {
+        activity.startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, diagnosticReport(snapshot)),
+            "Share diagnostic report",
+        ))
+    }
+
+    private fun diagnosticReport(snapshot: AgentSnapshot): String = buildString {
+        appendLine("Nutty Proxy diagnostic report")
+        appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
+        appendLine("Proxy state: ${snapshot.primaryPhase}")
+        appendLine("Paired servers: ${snapshot.profiles.size}")
+        snapshot.events.take(100).forEach { event ->
+            appendLine("${time(event)} ${event.kind}: ${event.detail}")
+        }
+    }
 
     private fun colorFor(kind: AgentEvent.Kind): Color = when (kind) {
         AgentEvent.Kind.Connection, AgentEvent.Kind.Request -> NuttyColor.Green

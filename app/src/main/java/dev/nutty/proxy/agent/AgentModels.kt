@@ -2,6 +2,8 @@ package dev.nutty.proxy.agent
 
 import android.content.Context
 import android.net.Uri
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
@@ -9,6 +11,9 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
 
 data class PairingPayload(
     val gatewayUrl: String,
@@ -25,6 +30,9 @@ data class AgentProfile(
     val gatewayUrl: String,
     val certificatePin: String,
     val enabled: Boolean = true,
+    /** The server has not accepted this pairing yet. It remains visible so the
+     * user can see and retry/revoke a failed pairing instead of losing it. */
+    val enrollmentPending: Boolean = false,
 )
 
 enum class ConnectionPhase { Connecting, Connected, Attention, Reconnecting, Paused, Disconnected }
@@ -119,6 +127,7 @@ class AgentStore(context: Context) {
                         gatewayUrl = item.getString("gatewayUrl"),
                         certificatePin = item.getString("certificatePin"),
                         enabled = item.optBoolean("enabled", true),
+                        enrollmentPending = item.optBoolean("enrollmentPending", false),
                     )
                 )
             }
@@ -140,6 +149,7 @@ class AgentStore(context: Context) {
                     put("gatewayUrl", entry.gatewayUrl)
                     put("certificatePin", entry.certificatePin)
                     put("enabled", entry.enabled)
+                    put("enrollmentPending", entry.enrollmentPending)
                 })
             }
         }.toString()).apply()
@@ -150,7 +160,7 @@ class AgentStore(context: Context) {
         prefs.edit().putString("profiles", JSONArray().apply {
             updated.forEach { entry -> put(JSONObject().apply {
                 put("id", entry.id); put("agentId", entry.agentId); put("serverName", entry.serverName)
-                put("gatewayUrl", entry.gatewayUrl); put("certificatePin", entry.certificatePin); put("enabled", entry.enabled)
+                put("gatewayUrl", entry.gatewayUrl); put("certificatePin", entry.certificatePin); put("enabled", entry.enabled); put("enrollmentPending", entry.enrollmentPending)
             }) }
         }.toString()).apply()
     }
@@ -158,6 +168,12 @@ class AgentStore(context: Context) {
     fun setProfileEnabled(profileId: String, enabled: Boolean) {
         profiles().firstOrNull { it.id == profileId }?.let { upsert(it.copy(enabled = enabled)) }
     }
+
+    /** One-time enrollment tokens are kept encrypted at rest until the server
+     * consumes them.  They are deleted immediately after a successful pairing. */
+    fun enrollmentToken(profileId: String): String? = EnrollmentSecrets.get(prefs, profileId)
+    fun setEnrollmentToken(profileId: String, token: String) = EnrollmentSecrets.put(prefs, profileId, token)
+    fun removeEnrollmentToken(profileId: String) = EnrollmentSecrets.remove(prefs, profileId)
 
     fun isServingEnabled(): Boolean = prefs.getBoolean("serving_enabled", false)
     fun setServingEnabled(enabled: Boolean) = prefs.edit().putBoolean("serving_enabled", enabled).apply()
@@ -196,6 +212,46 @@ class AgentStore(context: Context) {
                 })
             }
         }.toString()).apply()
+    }
+}
+
+private object EnrollmentSecrets {
+    private const val KEY_ALIAS = "nutty_proxy_enrollment_v1"
+    private const val PREFIX = "enrollment."
+    private const val TRANSFORMATION = "AES/GCM/NoPadding"
+
+    fun put(prefs: android.content.SharedPreferences, profileId: String, value: String) {
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        val packed = Base64.getEncoder().encodeToString(cipher.iv) + "." + Base64.getEncoder().encodeToString(encrypted)
+        prefs.edit().putString(PREFIX + profileId, packed).apply()
+    }
+
+    fun get(prefs: android.content.SharedPreferences, profileId: String): String? = runCatching {
+        val parts = prefs.getString(PREFIX + profileId, null)?.split('.', limit = 2) ?: return null
+        require(parts.size == 2)
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.getDecoder().decode(parts[0])))
+        }
+        String(cipher.doFinal(Base64.getDecoder().decode(parts[1])), Charsets.UTF_8)
+    }.getOrNull()
+
+    fun remove(prefs: android.content.SharedPreferences, profileId: String) {
+        prefs.edit().remove(PREFIX + profileId).apply()
+    }
+
+    private fun key(): javax.crypto.SecretKey {
+        val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(KEY_ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(
+                KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build(),
+            )
+        }.generateKey()
     }
 }
 

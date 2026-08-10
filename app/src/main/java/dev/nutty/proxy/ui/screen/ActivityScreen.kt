@@ -30,7 +30,6 @@ import dev.nutty.proxy.ui.component.SectionLabel
 import dev.nutty.proxy.ui.component.ShareMeter
 import dev.nutty.proxy.ui.component.WeekBars
 import dev.nutty.proxy.ui.component.tapText
-import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.LogEntry
 import dev.nutty.proxy.ui.model.RequestInfo
 import dev.nutty.proxy.ui.model.SheetKey
@@ -53,8 +52,19 @@ fun ActivityScreen(
     logs: List<LogEntry>,
     modifier: Modifier = Modifier,
     onOpenSheet: (SheetKey) -> Unit,
+    onShareReport: () -> Unit,
+    onCopyErrorLog: () -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf(0) }
+    val filters = listOf("All", "Requests", "Connection", "Errors")
+    val selected = filters[selectedFilter]
+    val shownRequests = if (selected == "All" || selected == "Requests") requests else emptyList()
+    val shownLogs = when (selected) {
+        "All" -> logs
+        "Requests" -> logs.filter { it.text.startsWith("CONNECT ") || it.text.startsWith("GET ") || it.text.startsWith("POST ") || it.text.startsWith("PUT ") || it.text.startsWith("DELETE ") }
+        "Connection" -> logs.filter { it.text.contains("tunnel", ignoreCase = true) || it.text.contains("proxy", ignoreCase = true) || it.text.contains("pair", ignoreCase = true) }
+        else -> logs.filter { it.color == NuttyColor.Red || it.color == NuttyColor.Amber }
+    }
 
     Column(
         modifier = modifier
@@ -71,7 +81,7 @@ fun ActivityScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("Activity", style = NuttyType.ScreenTitle, color = NuttyColor.TextPrimary)
-            GhostPillButton("Share report", onClick = {})
+            GhostPillButton("Share report", onClick = onShareReport)
         }
 
         Row(
@@ -81,7 +91,7 @@ fun ActivityScreen(
                 .padding(bottom = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            DemoData.activityFilters.forEachIndexed { index, filter ->
+            filters.forEachIndexed { index, filter ->
                 NuttyChip(
                     text = filter,
                     selected = index == selectedFilter,
@@ -128,7 +138,7 @@ fun ActivityScreen(
             ) {
                 SectionLabel("REQUESTS · LAST 5 MIN")
                 Text(
-                    text = "${requests.size} recent · i",
+                    text = "${shownRequests.size} recent · i",
                     style = NuttyType.MetaStrong,
                     color = NuttyColor.TextDim,
                     modifier = Modifier.tapText { onOpenSheet(SheetKey.Capture) },
@@ -141,7 +151,7 @@ fun ActivityScreen(
                     bottom = 4.dp,
                 )
             ) {
-                requests.take(20).forEach { request ->
+                shownRequests.take(20).forEach { request ->
                     CardDivider()
                     RequestRow(request) { onOpenSheet(request.sheet) }
                 }
@@ -165,7 +175,7 @@ fun ActivityScreen(
                     bottom = 4.dp,
                 )
             ) {
-                logs.take(100).forEach { entry ->
+                shownLogs.take(100).forEach { entry ->
                     CardDivider()
                     LogRow(entry)
                 }
@@ -174,7 +184,7 @@ fun ActivityScreen(
 
         OutlineButton(
             text = "Copy error log",
-            onClick = {},
+            onClick = onCopyErrorLog,
             height = Dim.ButtonHeightSmall,
         )
     }

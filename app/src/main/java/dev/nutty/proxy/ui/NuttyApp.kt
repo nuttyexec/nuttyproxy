@@ -20,10 +20,8 @@ import android.app.Activity
 import dev.nutty.proxy.ProxyViewModel
 import androidx.compose.ui.Modifier
 import dev.nutty.proxy.ui.component.BottomTabs
-import dev.nutty.proxy.ui.component.FakeStatusBar
 import dev.nutty.proxy.ui.component.HomeIndicator
 import dev.nutty.proxy.ui.component.SheetHost
-import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.HomeState
 import dev.nutty.proxy.ui.model.Screen
 import dev.nutty.proxy.ui.model.SheetKey
@@ -58,11 +56,12 @@ fun NuttyApp(
     modifier: Modifier = Modifier,
     initialScreen: Screen = Screen.Home,
     initialHomeState: HomeState = HomeState.Connected,
-    deviceName: String = DemoData.DEVICE_NAME,
+    deviceName: String = "Phone",
 ) {
     val model: ProxyViewModel = viewModel ?: composeViewModel()
     val snapshot by model.snapshot.collectAsState()
-    val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
+    val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     // Permission dialogs and Android Settings mutate state outside Compose.
     // Re-read the checklist whenever the user returns to this activity.
@@ -79,6 +78,7 @@ fun NuttyApp(
     val logs = model.logs(snapshot)
     val requests = model.requests(snapshot)
     val readiness = remember(readinessRevision) { model.readiness() }
+    val network = remember(readinessRevision) { model.networkSummary(context) }
     var screen by remember { mutableStateOf(if (snapshot.profiles.isEmpty()) Screen.Pair else initialScreen) }
     var sheet by remember { mutableStateOf<SheetKey?>(null) }
     var pendingPairing by remember { mutableStateOf<String?>(null) }
@@ -93,8 +93,6 @@ fun NuttyApp(
             .fillMaxSize()
             .background(NuttyColor.Bg)
     ) {
-        FakeStatusBar(network = DemoData.NETWORK)
-
         Box(modifier = Modifier.weight(1f)) {
             when (screen) {
                 Screen.Home -> HomeScreen(
@@ -104,6 +102,8 @@ fun NuttyApp(
                     activeStreams = snapshot.activeStreams,
                     traffic = model.traffic(snapshot),
                     tunnelCaption = snapshot.statuses.values.firstOrNull()?.detail ?: "Waiting for a server",
+                    networkValue = network.label,
+                    networkCaption = network.caption,
                     recent = logs,
                     modifier = Modifier.fillMaxSize(),
                     onOpenSheet = openSheet,
@@ -123,6 +123,7 @@ fun NuttyApp(
                 Screen.ServerDetail -> ServerDetailScreen(
                     server = selectedServer ?: servers.firstOrNull()
                         ?: ServerInfo(name = "No server selected", state = dev.nutty.proxy.ui.model.ServerState.Paused, lastSeen = "—", streams = "0", today = "0 B", errors = "0"),
+                    history = selectedServer?.let { model.logsForServer(snapshot, it.id) }.orEmpty(),
                     modifier = Modifier.fillMaxSize(),
                     onBack = { go(Screen.Servers) },
                     onOpenSheet = openSheet,
@@ -141,6 +142,8 @@ fun NuttyApp(
                     logs = logs,
                     modifier = Modifier.fillMaxSize(),
                     onOpenSheet = openSheet,
+                    onShareReport = { activity?.let { model.shareReport(it, snapshot) } },
+                    onCopyErrorLog = { model.copyErrorLog(context, snapshot) },
                 )
 
                 Screen.Settings -> SettingsScreen(
@@ -150,6 +153,8 @@ fun NuttyApp(
                     onBattery = { activity?.let { model.requestBatteryUnrestricted(it) } },
                     onData = { activity?.let { model.openDataSettings(it) } },
                     onAppSettings = { activity?.let { model.openAppSettings(it) } },
+                    onRename = model::saveDeviceName,
+                    onDisconnectAll = model::removeAllPairings,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -204,7 +209,7 @@ fun NuttyApp(
             }
 
             SheetHost(
-                spec = sheet?.let { DemoData.sheet(it) },
+                spec = sheet?.let { model.sheet(snapshot, it, selectedServer?.id) },
                 onDismiss = { sheet = null },
             )
         }

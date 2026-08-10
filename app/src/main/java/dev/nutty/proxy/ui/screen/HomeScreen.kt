@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.nutty.proxy.ui.component.CardDivider
 import dev.nutty.proxy.ui.component.InfoButton
-import dev.nutty.proxy.ui.component.InlineNotice
 import dev.nutty.proxy.ui.component.LogRow
 import dev.nutty.proxy.ui.component.MetricGrid
 import dev.nutty.proxy.ui.component.NuttyCard
@@ -25,7 +24,6 @@ import dev.nutty.proxy.ui.component.SectionLabel
 import dev.nutty.proxy.ui.component.StatusDot
 import dev.nutty.proxy.ui.component.StatusPill
 import dev.nutty.proxy.ui.component.tapText
-import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.HomeState
 import dev.nutty.proxy.ui.model.LogEntry
 import dev.nutty.proxy.ui.model.SheetKey
@@ -48,6 +46,8 @@ fun HomeScreen(
     activeStreams: Int,
     traffic: String,
     tunnelCaption: String,
+    networkValue: String,
+    networkCaption: String,
     recent: List<LogEntry>,
     modifier: Modifier = Modifier,
     onOpenSheet: (SheetKey) -> Unit,
@@ -77,7 +77,7 @@ fun HomeScreen(
             ) {
                 Text(deviceName, style = NuttyType.ScreenTitle, color = NuttyColor.TextPrimary)
                 Text(
-                    text = DemoData.AGENT_LABEL,
+                    text = "$serverCount paired server${if (serverCount == 1) "" else "s"}",
                     style = NuttyType.Meta,
                     color = NuttyColor.TextFaintest,
                 )
@@ -93,25 +93,18 @@ fun HomeScreen(
 
         StatusPill(
             state = state,
+            meta = tunnelCaption,
             // Paused is the one state with nothing to explain — the user did it.
             onClick = if (state == HomeState.Paused) null else ({ onOpenSheet(sheetForState) }),
         )
 
-        DemoData.notice(state)?.let { notice ->
-            InlineNotice(
-                notice = notice,
-                onClick = { onOpenSheet(sheetForState) },
-                onAction = { onOpenSheet(sheetForState) },
-            )
-        }
-
         when (state) {
             HomeState.Connected, HomeState.Attention ->
-                OutlineButton(DemoData.primaryAction(state), onPause)
+                OutlineButton("Pause proxy", onPause)
 
             HomeState.Reconnecting ->
                 OutlineButton(
-                    text = DemoData.primaryAction(state),
+                    text = "Cancel reconnect",
                     onClick = onPause,
                     textColor = NuttyColor.TextTertiary,
                     leading = { StatusDot(NuttyColor.Amber, size = 7.dp, blinking = true) },
@@ -119,8 +112,8 @@ fun HomeScreen(
 
             // Paused and Disconnected both need one obvious way back to serving,
             // so they get the white slab. The other three do not.
-            HomeState.Paused -> PrimaryButton(DemoData.primaryAction(state), onResume)
-            HomeState.Disconnected -> PrimaryButton(DemoData.primaryAction(state), onRetry)
+            HomeState.Paused -> PrimaryButton("Start proxy", onResume)
+            HomeState.Disconnected -> PrimaryButton("Retry now", onRetry)
         }
 
         MetricGrid(
@@ -129,6 +122,8 @@ fun HomeScreen(
             activeStreams = activeStreams,
             traffic = traffic,
             tunnelCaption = tunnelCaption,
+            networkValue = networkValue,
+            networkCaption = networkCaption,
             onTunnel = { onOpenSheet(SheetKey.Status) },
             onNetwork = { onOpenSheet(SheetKey.Network) },
             onServers = { onOpenSheet(SheetKey.Servers) },

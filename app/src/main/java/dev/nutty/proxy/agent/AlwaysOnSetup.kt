@@ -2,13 +2,13 @@ package dev.nutty.proxy.agent
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -26,12 +26,24 @@ object AlwaysOnSetup {
         }
     }
 
-    fun batteryUnrestricted(context: Context): Boolean =
-        context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+    /**
+     * "Unrestricted" in an OEM's App info screen and Android's separate Doze
+     * allow-list are not the same setting.  The latter made the checklist show
+     * a false warning on phones where the app was already allowed to run in the
+     * background.  Check the restriction Android actually exposes for this app.
+     */
+    fun backgroundBatteryRestricted(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            context.getSystemService(ActivityManager::class.java).isBackgroundRestricted
+        } else {
+            false
+        }
 
     fun requestBatteryUnrestricted(activity: Activity) {
-        activity.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-            .setData(Uri.parse("package:${activity.packageName}")))
+        // There is no portable Android intent for the vendor-specific
+        // "Unrestricted" switch.  App details is the truthful destination;
+        // it is where Android exposes the applicable battery control.
+        openAppSettings(activity)
     }
 
     fun backgroundDataRestricted(context: Context): Boolean =

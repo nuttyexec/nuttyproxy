@@ -294,7 +294,7 @@ function runGateway(configFile, config) {
       const { agent, enrollment } = reserved;
       const record = agent || { agentId: enrollment.agentId, deviceName: deviceName(hello.deviceName), serverName: enrollment.serverName, listenHost: enrollment.listenHost, listenPort: enrollment.listenPort, enabled: true, publicKeyJwk: hello.publicKeyJwk };
       if (!record.enabled) return ws.close(1008, "agent disabled");
-      pending = { enrollment, record, challenge: base64Url(crypto.randomBytes(32)) }; sendJson(ws, { type: "challenge", version: VERSION, challenge: pending.challenge });
+      pending = { enrollment, record, deviceName: deviceName(hello.deviceName), challenge: base64Url(crypto.randomBytes(32)) }; sendJson(ws, { type: "challenge", version: VERSION, challenge: pending.challenge });
       // `ws` can invoke listeners added during the hello emission for that same
       // message. Defer registration so hello is never mistaken for authenticate.
       queueMicrotask(() => ws.on("message", async (raw, binary) => {
@@ -305,6 +305,13 @@ function runGateway(configFile, config) {
           return ws.close(1008, "signature rejected");
         }
         if (pending.enrollment && !consumeEnrollment(stateFile, pending.enrollment, pending.record)) return ws.close(1008, "enrollment already consumed");
+        // An already-enrolled phone proves possession of its device key before
+        // this point, so it may refresh its user-selected display name. Do not
+        // accept that field before the signature check.
+        if (!pending.enrollment) {
+          const data = loadData(stateFile); const current = data.agents.find((entry) => entry.agentId === pending.record.agentId);
+          if (current && current.deviceName !== pending.deviceName) { current.deviceName = pending.deviceName; saveData(stateFile, data); pending.record = current; }
+        }
         active.get(pending.record.agentId)?.stop(); connected = new ConnectedAgent(pending.record, ws, (id, instance) => { if (active.get(id) === instance) active.delete(id); });
         try { await connected.start(); } catch (error) { connected = null; sendJson(ws, { type: "error", code: "listen_failed" }); return ws.close(1011, String(error)); }
         active.set(pending.record.agentId, connected); return sendJson(ws, { type: "ready", agentId: pending.record.agentId, heartbeatIntervalMs: 90_000 });

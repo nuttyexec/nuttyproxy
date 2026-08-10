@@ -53,6 +53,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
             ACTION_PAUSE_PROFILE -> intent.getStringExtra(EXTRA_PROFILE_ID)?.let(::pauseProfile)
             ACTION_RESUME_PROFILE -> intent.getStringExtra(EXTRA_PROFILE_ID)?.let(::resumeProfile)
             ACTION_REVOKE_PROFILE -> intent.getStringExtra(EXTRA_PROFILE_ID)?.let(::revokeProfile)
+            ACTION_REMOVE_ALL -> removeAllProfiles()
             else -> if (store.isServingEnabled()) ensureConnections()
         }
         return START_STICKY
@@ -69,7 +70,8 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onReady(profile: AgentProfile) {
-        store.upsert(profile)
+        store.upsert(profile.copy(enrollmentPending = false))
+        store.removeEnrollmentToken(profile.id)
         store.setServingEnabled(true)
         retryAttempts.remove(profile.id)
         pendingEnrollmentTokens.remove(profile.id)
@@ -127,21 +129,32 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
         onStatus(profile, ConnectionPhase.Reconnecting, "Retrying in ${delay / 1000}s · $reason")
         record(profile, AgentEvent.Kind.Error, "Tunnel disconnected · $reason")
         mainHandler.postDelayed({
-            if (!stopping && store.isServingEnabled()) startProfile(profile, pendingEnrollmentTokens[profile.id])
+            if (!stopping && store.isServingEnabled()) {
+                startProfile(profile, pendingEnrollmentTokens[profile.id] ?: store.enrollmentToken(profile.id))
+            }
         }, delay)
     }
 
     private fun enroll(rawPayload: String) {
         PairingParser.parse(rawPayload).onSuccess { payload ->
-            val profile = PairingParser.profile(payload)
-            if (store.profiles().any { it.gatewayUrl == profile.gatewayUrl && it.agentId == profile.agentId }) {
+            val parsedProfile = PairingParser.profile(payload)
+            val existing = store.profiles().firstOrNull {
+                it.gatewayUrl == parsedProfile.gatewayUrl && it.agentId == parsedProfile.agentId
+            }
+            if (existing != null && !existing.enrollmentPending) {
                 showForeground(ConnectionPhase.Attention, "This server is already paired")
                 return@onSuccess
             }
+            // A fresh QR for an incomplete pairing replaces that attempt rather
+            // than creating a hidden duplicate in the Servers list.
+            val profile = parsedProfile.copy(id = existing?.id ?: parsedProfile.id, enrollmentPending = true)
             if (pendingEnrollmentScopes.putIfAbsent(identityScope(profile), profile.id) != null) {
                 showForeground(ConnectionPhase.Attention, "Pairing is already in progress")
                 return@onSuccess
             }
+            connections.remove(profile.id)?.stop()
+            store.upsert(profile)
+            store.setEnrollmentToken(profile.id, payload.enrollmentToken)
             store.setServingEnabled(true)
             AgentRuntimeState.refresh(this)
             pendingEnrollmentTokens[profile.id] = payload.enrollmentToken
@@ -167,7 +180,18 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
     }
 
     private fun ensureConnections() {
-        store.profiles().filter { it.enabled }.forEach { startProfile(it) }
+        store.profiles().filter { it.enabled }.forEach { profile ->
+            if (profile.enrollmentPending) {
+                val token = store.enrollmentToken(profile.id)
+                if (token == null) {
+                    onStatus(profile, ConnectionPhase.Attention, "Pairing incomplete · scan a fresh pairing QR")
+                } else {
+                    startProfile(profile, token)
+                }
+            } else {
+                startProfile(profile)
+            }
+        }
         if (store.profiles().isEmpty()) showForeground(ConnectionPhase.Attention, "Add a server to start serving")
     }
 
@@ -181,6 +205,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
     private fun pauseProfile(profileId: String) {
         store.setProfileEnabled(profileId, false)
         pendingEnrollmentTokens.remove(profileId)
+        store.removeEnrollmentToken(profileId)
         connections.remove(profileId)?.stop()
         pendingEnrollmentTokens.remove(profileId)
         AgentRuntimeState.removeStatus(profileId)
@@ -190,7 +215,12 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
     private fun resumeProfile(profileId: String) {
         store.setProfileEnabled(profileId, true)
         AgentRuntimeState.refresh(this)
-        store.profiles().firstOrNull { it.id == profileId }?.let(::startProfile)
+        store.profiles().firstOrNull { it.id == profileId }?.let { profile ->
+            if (profile.enrollmentPending) {
+                store.enrollmentToken(profile.id)?.let { startProfile(profile, it) }
+                    ?: onStatus(profile, ConnectionPhase.Attention, "Pairing incomplete · scan a fresh pairing QR")
+            } else startProfile(profile)
+        }
     }
 
     private fun revokeProfile(profileId: String) {
@@ -198,9 +228,27 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
         connections.remove(profileId)?.stop()
         store.remove(profileId)
         profile?.let { identity.remove(identityScope(it)) }
+        store.removeEnrollmentToken(profileId)
         AgentRuntimeState.removeStatus(profileId)
         AgentRuntimeState.refresh(this)
         if (store.profiles().isEmpty()) pauseServing()
+    }
+
+    private fun removeAllProfiles() {
+        val profiles = store.profiles()
+        connections.values.forEach { it.stop() }
+        connections.clear()
+        profiles.forEach { profile ->
+            identity.remove(identityScope(profile))
+            store.removeEnrollmentToken(profile.id)
+            store.remove(profile.id)
+            AgentRuntimeState.removeStatus(profile.id)
+        }
+        store.setServingEnabled(false)
+        AgentRuntimeState.refresh(this)
+        AgentRuntimeState.record(this, AgentEvent(System.currentTimeMillis(), kind = AgentEvent.Kind.Connection, detail = "All local pairings removed"))
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun showForeground(phase: ConnectionPhase, detail: String) {
@@ -250,6 +298,7 @@ class ProxyAgentService : Service(), AgentConnection.Listener {
         const val ACTION_PAUSE_PROFILE = "dev.nutty.proxy.agent.PAUSE_PROFILE"
         const val ACTION_RESUME_PROFILE = "dev.nutty.proxy.agent.RESUME_PROFILE"
         const val ACTION_REVOKE_PROFILE = "dev.nutty.proxy.agent.REVOKE_PROFILE"
+        const val ACTION_REMOVE_ALL = "dev.nutty.proxy.agent.REMOVE_ALL"
         const val EXTRA_PAIRING = "pairing_payload"
         const val EXTRA_PROFILE_ID = "profile_id"
 

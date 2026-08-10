@@ -94,6 +94,7 @@ data class ServerInfo(
     val errors: String,
     val errorNote: String? = null,
     val errorAt: String? = null,
+    val certificatePin: String = "",
 )
 
 enum class ServerState {

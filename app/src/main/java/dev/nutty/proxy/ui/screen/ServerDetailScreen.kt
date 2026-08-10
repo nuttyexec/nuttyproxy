@@ -24,10 +24,10 @@ import dev.nutty.proxy.ui.component.SectionLabel
 import dev.nutty.proxy.ui.component.ServerBadge
 import dev.nutty.proxy.ui.component.WeekBars
 import dev.nutty.proxy.ui.component.tapText
-import dev.nutty.proxy.ui.model.DemoData
 import dev.nutty.proxy.ui.model.ServerState
 import dev.nutty.proxy.ui.model.ServerInfo
 import dev.nutty.proxy.ui.model.SheetKey
+import dev.nutty.proxy.ui.model.LogEntry
 import dev.nutty.proxy.ui.theme.Dim
 import dev.nutty.proxy.ui.theme.NuttyColor
 import dev.nutty.proxy.ui.theme.NuttyType
@@ -42,6 +42,7 @@ import dev.nutty.proxy.ui.theme.NuttyType
 @Composable
 fun ServerDetailScreen(
     server: ServerInfo,
+    history: List<LogEntry>,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onOpenSheet: (SheetKey) -> Unit,
@@ -81,7 +82,11 @@ fun ServerDetailScreen(
                     total = server.today,
                     modifier = Modifier.padding(bottom = 14.dp),
                 )
-                WeekBars(DemoData.serverWeek)
+                Text(
+                    text = "Current app-session usage. Daily history is not collected.",
+                    style = NuttyType.Hint,
+                    color = NuttyColor.TextFaint,
+                )
             }
         }
 
@@ -105,7 +110,7 @@ fun ServerDetailScreen(
                 CardDivider()
                 DetailRow(
                     label = "Certificate",
-                    value = "9F:2C:AE…",
+                    value = server.certificatePin.removePrefix("sha256/").take(12).ifBlank { "—" } + if (server.certificatePin.isBlank()) "" else "…",
                     chevron = true,
                     onClick = { onOpenSheet(SheetKey.Certificate) },
                 )
@@ -129,7 +134,8 @@ fun ServerDetailScreen(
                     bottom = 4.dp,
                 )
             ) {
-                DemoData.serverHistory.forEach { entry ->
+                val entries = history.ifEmpty { listOf(LogEntry(NuttyColor.TextDim, "No connection activity yet", "—")) }
+                entries.forEach { entry ->
                     CardDivider()
                     // No severity dot here: every line is a normal session event.
                     LogRow(entry, showDot = false)

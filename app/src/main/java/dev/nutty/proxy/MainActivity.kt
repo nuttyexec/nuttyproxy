@@ -11,18 +11,7 @@ import dev.nutty.proxy.ui.NuttyApp
 import dev.nutty.proxy.ui.theme.NuttyColor
 import dev.nutty.proxy.ui.theme.NuttyTheme
 
-/**
- * Design host.
- *
- * This activity currently renders the design implementation against [DemoData];
- * the agent, the tunnel and the foreground service are not wired up. Everything
- * below `ui/` is production-shaped, so wiring is a matter of replacing the state
- * in `NuttyApp` with a ViewModel.
- *
- * Note the app draws its own status bar (`FakeStatusBar`) so a rendered frame
- * matches the 412 × 916 design canvas. Going edge-to-edge for real means
- * dropping that composable and applying `WindowInsets` instead.
- */
+/** Production host for the persistent proxy agent. */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
