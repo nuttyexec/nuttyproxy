@@ -581,13 +581,27 @@ async function commandSetup(options) {
   const candidates = domainCandidates(); const detectedIp = await publicIp();
   let previousHost = "";
   try { previousHost = new URL(existing?.publicUrl || "").hostname; } catch { /* no previous configuration */ }
-  const defaultAddress = candidates.includes(previousHost) ? previousHost : (candidates[0] || detectedIp || "");
   if (!process.stdin.isTTY && !options.address) throw new Error("setup needs a terminal (or the advanced --address option)");
   const terminal = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
   try {
-    if (candidates.length) console.log(`Detected Nginx TLS domain${candidates.length > 1 ? "s" : ""}: ${candidates.join(", ")}`);
-    else if (detectedIp) console.log(`Detected public IP: ${detectedIp}`);
-    const address = (options.address || await ask(terminal, "Public address (configured domain recommended, or public IP)", defaultAddress)).toLowerCase();
+    const entries = [
+      ...candidates.map((address) => ({ kind: "domain", address })),
+      ...(detectedIp ? [{ kind: "ip", address: detectedIp }] : []),
+    ];
+    let selected;
+    if (options.address) {
+      selected = { address: options.address };
+    } else if (entries.length) {
+      const preferredIndex = Math.max(0, entries.findIndex((entry) => entry.address === previousHost));
+      console.log("\nChoose the public endpoint:");
+      for (const [index, entry] of entries.entries()) console.log(`  ${index + 1}) ${entry.kind === "ip" ? "Public IP" : "HTTPS domain"}: ${entry.address}`);
+      const choice = Number(await ask(terminal, "Choice", String(preferredIndex + 1)));
+      if (!Number.isInteger(choice) || choice < 1 || choice > entries.length) throw new Error("choose one of the displayed endpoint numbers");
+      selected = entries[choice - 1];
+    } else {
+      selected = { address: await ask(terminal, "Public address (domain or public IP)") };
+    }
+    const address = selected.address.toLowerCase();
     if (!validHostName(address) && !isPublicAddress(address)) throw new Error("enter a configured public domain or a public IP address");
     const pathValue = cleanWssPath(options.path || (terminal ? await ask(terminal, "WSS path", DEFAULT_WSS_PATH) : DEFAULT_WSS_PATH));
     let endpoint;

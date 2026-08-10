@@ -29,9 +29,10 @@ nuttyproxy --help
 sudo nuttyproxy setup
 ```
 
-Choose a detected HTTPS domain, then press Enter at the path prompt to use
-`/nutty-proxy`. The command adds the exact Nginx WSS route, records the TLS
-pin, and installs one boot-persistent server-wide daemon.
+Choose either a detected HTTPS domain or the detected public IP, then press
+Enter at the path prompt to use `/nutty-proxy`. The command adds the exact
+Nginx WSS route, records the TLS pin, and installs one boot-persistent
+server-wide daemon.
 
 ### 3. Install and pair the phone
 
